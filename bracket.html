@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>March Madness Bracket — Detail</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <h1><span class="emoji">🏀</span> March Madness Bracket</h1>
+    <nav class="site-nav">
+      <a href="index.html">Scoreboard</a>
+      <a href="submit.html">Submit Bracket</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <div id="bracket-loading" class="loading">Loading bracket…</div>
+    <div id="bracket-error" class="error-msg" style="display:none;"></div>
+    <div id="bracket-content" style="display:none;">
+      <div class="bracket-header">
+        <h2 id="bracket-title"></h2>
+        <div class="bracket-score-summary">
+          <div class="stat">
+            <div class="stat-value" id="current-score">0</div>
+            <div class="stat-label">Score</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value" id="max-possible">0</div>
+            <div class="stat-label">Max Possible</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="legend">
+        <div class="legend-item"><div class="legend-swatch correct"></div> Correct</div>
+        <div class="legend-item"><div class="legend-swatch incorrect"></div> Incorrect / Eliminated</div>
+        <div class="legend-item"><div class="legend-swatch pending"></div> Pending</div>
+      </div>
+
+      <div id="bracket-container"></div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+  <script>
+    (function () {
+      const loadingEl = document.getElementById('bracket-loading');
+      const errorEl = document.getElementById('bracket-error');
+      const contentEl = document.getElementById('bracket-content');
+      const titleEl = document.getElementById('bracket-title');
+      const scoreEl = document.getElementById('current-score');
+      const maxEl = document.getElementById('max-possible');
+      const containerEl = document.getElementById('bracket-container');
+
+      const params = new URLSearchParams(window.location.search);
+      const nameParam = params.get('name');
+
+      if (!nameParam) {
+        showError('No bracket specified. Go to the scoreboard and click a name.');
+        return;
+      }
+
+      function showError(msg) {
+        loadingEl.style.display = 'none';
+        errorEl.textContent = msg;
+        errorEl.style.display = 'block';
+      }
+
+      function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+      }
+
+      async function loadBracket() {
+        try {
+          const [tournament, results, manifest] = await Promise.all([
+            loadTournament(),
+            loadResults(),
+            fetchJSON('picks/manifest.json'),
+          ]);
+
+          let picks = null;
+          for (const filename of manifest.participants) {
+            try {
+              const p = await fetchJSON(`picks/${filename}`);
+              const normalized = p.submitter.toLowerCase().replace(/\s+/g, '-');
+              if (normalized === nameParam) {
+                picks = p;
+                break;
+              }
+            } catch(e) {}
+          }
+
+          if (!picks) {
+            showError(`Bracket not found for "${nameParam}".`);
+            return;
+          }
+
+          const eliminated = getEliminatedTeams(results, tournament);
+          const scoring = scorePicks(picks, results, tournament);
+
+          document.title = `${picks.submitter}'s Bracket — March Madness`;
+          titleEl.textContent = `${picks.submitter}'s Bracket`;
+          scoreEl.textContent = scoring.currentScore;
+          maxEl.textContent = scoring.maxPossible;
+
+          renderFullBracket(tournament, results, picks, eliminated);
+
+          loadingEl.style.display = 'none';
+          contentEl.style.display = 'block';
+        } catch (err) {
+          showError(`Error loading bracket: ${err.message}`);
+        }
+      }
+
+      function renderFullBracket(tournament, results, picks, eliminated) {
+        containerEl.innerHTML = '';
+
+        // ── First Four row at top ──
+        if (tournament.firstFour.length > 0) {
+          const ffRow = document.createElement('div');
+          ffRow.className = 'ff-row';
+          ffRow.innerHTML = '<div class="ff-row-label">First Four</div>';
+          const ffGames = document.createElement('div');
+          ffGames.className = 'ff-games';
+          for (const ff of tournament.firstFour) {
+            const pickVal = picks.firstFour && picks.firstFour[ff.id];
+            const status = getPickStatus('firstFour', ff.id, pickVal, results, eliminated);
+            ffGames.appendChild(createGameEl(
+              ff.teams[0].name, ff.teams[0].seed,
+              ff.teams[1].name, ff.teams[1].seed,
+              pickVal, status
+            ));
+          }
+          ffRow.appendChild(ffGames);
+          containerEl.appendChild(ffRow);
+        }
+
+        // ── Main bracket: Left side (regions 0,1) | Center (FF+Champ) | Right side (regions 2,3) ──
+        const bracketMain = document.createElement('div');
+        bracketMain.className = 'bracket-main';
+
+        // Left half: East (top) + South (bottom), rounds flow left→right toward center
+        const leftHalf = document.createElement('div');
+        leftHalf.className = 'bracket-half bracket-left';
+        leftHalf.appendChild(buildRegionBracket(tournament.regions[0], tournament, results, picks, eliminated, 'ltr'));
+        leftHalf.appendChild(buildRegionBracket(tournament.regions[2], tournament, results, picks, eliminated, 'ltr'));
+        bracketMain.appendChild(leftHalf);
+
+        // Center column: Final Four + Championship
+        const centerCol = document.createElement('div');
+        centerCol.className = 'bracket-center';
+
+        // Final Four game 1 (East vs South)
+        const ff1Pick = picks.finalFour && picks.finalFour['FF_1'];
+        const ff1Status = getPickStatus('finalFour', 'FF_1', ff1Pick, results, eliminated);
+        const ff1A = picks.eliteEight && picks.eliteEight[tournament.regions[0]];
+        const ff1B = picks.eliteEight && picks.eliteEight[tournament.regions[2]];
+
+        const ff1Label = document.createElement('div');
+        ff1Label.className = 'center-round-label';
+        ff1Label.textContent = 'Final Four';
+        centerCol.appendChild(ff1Label);
+
+        centerCol.appendChild(createGameEl(
+          ff1A || 'TBD', ff1A ? getTeamSeed(ff1A, tournament) : '?',
+          ff1B || 'TBD', ff1B ? getTeamSeed(ff1B, tournament) : '?',
+          ff1Pick, ff1Status
+        ));
+
+        // Championship
+        const champPick = picks.championship;
+        const champStatus = getPickStatus('championship', 'championship', champPick, results, eliminated);
+        const champA = picks.finalFour && picks.finalFour['FF_1'];
+        const champB = picks.finalFour && picks.finalFour['FF_2'];
+
+        const champLabel = document.createElement('div');
+        champLabel.className = 'center-round-label champ-label';
+        champLabel.textContent = 'Championship';
+        centerCol.appendChild(champLabel);
+
+        centerCol.appendChild(createGameEl(
+          champA || 'TBD', champA ? getTeamSeed(champA, tournament) : '?',
+          champB || 'TBD', champB ? getTeamSeed(champB, tournament) : '?',
+          champPick, champStatus
+        ));
+
+        // Champion display
+        if (champPick) {
+          const champDisplay = document.createElement('div');
+          champDisplay.className = 'champion-display';
+          champDisplay.innerHTML = `🏆 <strong>${escapeHtml(champPick)}</strong>`;
+          centerCol.appendChild(champDisplay);
+        }
+
+        // Final Four game 2 (West vs Midwest)
+        const ff2Label = document.createElement('div');
+        ff2Label.className = 'center-round-label';
+        ff2Label.textContent = 'Final Four';
+        centerCol.appendChild(ff2Label);
+
+        const ff2Pick = picks.finalFour && picks.finalFour['FF_2'];
+        const ff2Status = getPickStatus('finalFour', 'FF_2', ff2Pick, results, eliminated);
+        const ff2A = picks.eliteEight && picks.eliteEight[tournament.regions[1]];
+        const ff2B = picks.eliteEight && picks.eliteEight[tournament.regions[3]];
+        centerCol.appendChild(createGameEl(
+          ff2A || 'TBD', ff2A ? getTeamSeed(ff2A, tournament) : '?',
+          ff2B || 'TBD', ff2B ? getTeamSeed(ff2B, tournament) : '?',
+          ff2Pick, ff2Status
+        ));
+
+        bracketMain.appendChild(centerCol);
+
+        // Right half: West (top) + Midwest (bottom), rounds flow right→left toward center
+        const rightHalf = document.createElement('div');
+        rightHalf.className = 'bracket-half bracket-right';
+        rightHalf.appendChild(buildRegionBracket(tournament.regions[1], tournament, results, picks, eliminated, 'rtl'));
+        rightHalf.appendChild(buildRegionBracket(tournament.regions[3], tournament, results, picks, eliminated, 'rtl'));
+        bracketMain.appendChild(rightHalf);
+
+        containerEl.appendChild(bracketMain);
+      }
+
+      /** Build a single region's bracket (R64 → R32 → S16 → E8) as stacked rounds */
+      function buildRegionBracket(region, tournament, results, picks, eliminated, direction) {
+        const regionEl = document.createElement('div');
+        regionEl.className = 'region-bracket';
+
+        const label = document.createElement('div');
+        label.className = 'region-label';
+        label.textContent = `${region} Region`;
+        regionEl.appendChild(label);
+
+        const roundsEl = document.createElement('div');
+        roundsEl.className = 'region-rounds';
+
+        // Build 4 columns: R64 (8 games), R32 (4), S16 (2), E8 (1)
+        // For RTL, we reverse the column order
+
+        const columns = [];
+
+        // R64
+        const r64Col = createRoundCol('Rd of 64');
+        const matchups = buildR64Matchups(region, tournament, results);
+        for (const m of matchups) {
+          const pickVal = picks.roundOf64 && picks.roundOf64[m.slot];
+          const status = getPickStatus('roundOf64', m.slot, pickVal, results, eliminated);
+          r64Col.games.appendChild(createGameEl(m.teamA, m.seedA, m.teamB, m.seedB, pickVal, status));
+        }
+        columns.push(r64Col.el);
+
+        // R32
+        const r32Col = createRoundCol('Rd of 32');
+        for (let i = 1; i <= 4; i++) {
+          const slot = `${region}_${i}`;
+          const pickVal = picks.roundOf32 && picks.roundOf32[slot];
+          const status = getPickStatus('roundOf32', slot, pickVal, results, eliminated);
+          const teamA = picks.roundOf64 && picks.roundOf64[`${region}_${2*i-1}`];
+          const teamB = picks.roundOf64 && picks.roundOf64[`${region}_${2*i}`];
+          r32Col.games.appendChild(createGameEl(
+            teamA || 'TBD', teamA ? getTeamSeed(teamA, tournament) : '?',
+            teamB || 'TBD', teamB ? getTeamSeed(teamB, tournament) : '?',
+            pickVal, status
+          ));
+        }
+        columns.push(r32Col.el);
+
+        // Sweet 16
+        const s16Col = createRoundCol('Sweet 16');
+        for (let i = 1; i <= 2; i++) {
+          const slot = `${region}_${i}`;
+          const pickVal = picks.sweetSixteen && picks.sweetSixteen[slot];
+          const status = getPickStatus('sweetSixteen', slot, pickVal, results, eliminated);
+          const teamA = picks.roundOf32 && picks.roundOf32[`${region}_${2*i-1}`];
+          const teamB = picks.roundOf32 && picks.roundOf32[`${region}_${2*i}`];
+          s16Col.games.appendChild(createGameEl(
+            teamA || 'TBD', teamA ? getTeamSeed(teamA, tournament) : '?',
+            teamB || 'TBD', teamB ? getTeamSeed(teamB, tournament) : '?',
+            pickVal, status
+          ));
+        }
+        columns.push(s16Col.el);
+
+        // Elite 8
+        const e8Col = createRoundCol('Elite 8');
+        const e8Pick = picks.eliteEight && picks.eliteEight[region];
+        const e8Status = getPickStatus('eliteEight', region, e8Pick, results, eliminated);
+        const e8A = picks.sweetSixteen && picks.sweetSixteen[`${region}_1`];
+        const e8B = picks.sweetSixteen && picks.sweetSixteen[`${region}_2`];
+        e8Col.games.appendChild(createGameEl(
+          e8A || 'TBD', e8A ? getTeamSeed(e8A, tournament) : '?',
+          e8B || 'TBD', e8B ? getTeamSeed(e8B, tournament) : '?',
+          e8Pick, e8Status
+        ));
+        columns.push(e8Col.el);
+
+        // For RTL regions, reverse the column order so E8 is on the left (toward center)
+        const ordered = direction === 'rtl' ? columns.reverse() : columns;
+        for (const col of ordered) roundsEl.appendChild(col);
+
+        regionEl.appendChild(roundsEl);
+        return regionEl;
+      }
+
+      function createRoundCol(label) {
+        const el = document.createElement('div');
+        el.className = 'bracket-round';
+        el.innerHTML = `<div class="bracket-round-label">${escapeHtml(label)}</div>`;
+        const games = document.createElement('div');
+        games.className = 'bracket-round-games';
+        el.appendChild(games);
+        return { el, games };
+      }
+
+      function createGameEl(teamA, seedA, teamB, seedB, pickValue, status) {
+        const game = document.createElement('div');
+        game.className = 'bracket-game';
+
+        const statusClass = `pick-${status}`;
+        const statusIcons = { correct: '✅', incorrect: '❌', pending: '⏳' };
+
+        function teamRow(name, seed, isPicked) {
+          const div = document.createElement('div');
+          div.className = 'bracket-team' + (isPicked ? ` ${statusClass} winner` : '');
+          div.innerHTML = `
+            <span class="seed">${escapeHtml(String(seed))}</span>
+            <span class="team-name">${escapeHtml(name)}</span>
+            ${isPicked ? `<span class="status-icon">${statusIcons[status] || ''}</span>` : ''}
+          `;
+          return div;
+        }
+
+        game.appendChild(teamRow(teamA, seedA, pickValue === teamA));
+        game.appendChild(teamRow(teamB, seedB, pickValue === teamB));
+        return game;
+      }
+
+      loadBracket();
+    })();
+  </script>
+</body>
+</html>

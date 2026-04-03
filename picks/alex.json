@@ -1,0 +1,82 @@
+{
+  "submitter": "Alex",
+  "firstFour": {
+    "FF1": "Prairie View A&M",
+    "FF2": "Howard",
+    "FF3": "NC State",
+    "FF4": "SMU"
+  },
+  "roundOf64": {
+    "East_1": "Siena",
+    "East_2": "TCU",
+    "East_3": "Northern Iowa",
+    "East_4": "Kansas",
+    "East_5": "South Florida",
+    "East_6": "North Dakota State",
+    "East_7": "UCLA",
+    "East_8": "UConn",
+    "South_1": "Prairie View A&M",
+    "South_2": "Clemson",
+    "South_3": "McNeese",
+    "South_4": "Nebraska",
+    "South_5": "VCU",
+    "South_6": "Illinois",
+    "South_7": "Texas A&M",
+    "South_8": "Houston",
+    "West_1": "Arizona",
+    "West_2": "Villanova",
+    "West_3": "Wisconsin",
+    "West_4": "Arkansas",
+    "West_5": "NC State",
+    "West_6": "Gonzaga",
+    "West_7": "Missouri",
+    "West_8": "Queens (NC)",
+    "Midwest_1": "Michigan",
+    "Midwest_2": "Georgia",
+    "Midwest_3": "Akron",
+    "Midwest_4": "Hofstra",
+    "Midwest_5": "SMU",
+    "Midwest_6": "Wright St.",
+    "Midwest_7": "Kentucky",
+    "Midwest_8": "Tennessee State"
+  },
+  "roundOf32": {
+    "East_1": "TCU",
+    "East_2": "Northern Iowa",
+    "East_3": "North Dakota State",
+    "East_4": "UConn",
+    "South_1": "Clemson",
+    "South_2": "McNeese",
+    "South_3": "Illinois",
+    "South_4": "Houston",
+    "West_1": "Arizona",
+    "West_2": "Wisconsin",
+    "West_3": "NC State",
+    "West_4": "Missouri",
+    "Midwest_1": "Michigan",
+    "Midwest_2": "Akron",
+    "Midwest_3": "Wright St.",
+    "Midwest_4": "Tennessee State"
+  },
+  "sweetSixteen": {
+    "East_1": "Northern Iowa",
+    "East_2": "UConn",
+    "South_1": "Clemson",
+    "South_2": "Houston",
+    "West_1": "Arizona",
+    "West_2": "Missouri",
+    "Midwest_1": "Michigan",
+    "Midwest_2": "Tennessee State"
+  },
+  "eliteEight": {
+    "East": "Northern Iowa",
+    "South": "Clemson",
+    "West": "Arizona",
+    "Midwest": "Michigan"
+  },
+  "finalFour": {
+    "FF_1": "Clemson",
+    "FF_2": "Michigan"
+  },
+  "championship": "Michigan"
+}

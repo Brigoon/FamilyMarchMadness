@@ -1,0 +1,624 @@
+/* ─── CSS Reset & Base ──────────────────────────────────────────────────── */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg: #0f1923;
+  --bg-card: #1a2736;
+  --bg-card-hover: #223344;
+  --text: #e8edf2;
+  --text-muted: #8899aa;
+  --accent: #ff9f1c;
+  --accent-hover: #ffb84d;
+  --green: #2ecc71;
+  --green-bg: rgba(46, 204, 113, 0.12);
+  --red: #e74c3c;
+  --red-bg: rgba(231, 76, 60, 0.12);
+  --gray: #7f8c8d;
+  --gray-bg: rgba(127, 140, 141, 0.12);
+  --border: #2c3e50;
+  --radius: 8px;
+  --shadow: 0 2px 8px rgba(0,0,0,0.3);
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); text-decoration: underline; }
+
+/* ─── Header ───────────────────────────────────────────────────────────── */
+
+.site-header {
+  background: linear-gradient(135deg, #1a2736 0%, #0f1923 100%);
+  border-bottom: 2px solid var(--accent);
+  padding: 1rem 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.site-header h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.site-header h1 .emoji {
+  font-size: 1.8rem;
+}
+
+.site-nav {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.site-nav a {
+  color: var(--text-muted);
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.site-nav a:hover,
+.site-nav a.active {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+/* ─── Container ────────────────────────────────────────────────────────── */
+
+.container {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.container-narrow {
+  max-width: 800px;
+}
+
+/* ─── Scoreboard Table ─────────────────────────────────────────────────── */
+
+.scoreboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+}
+
+.scoreboard-table th,
+.scoreboard-table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.scoreboard-table th {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.scoreboard-table tbody tr {
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.scoreboard-table tbody tr:hover {
+  background: var(--bg-card-hover);
+}
+
+.scoreboard-table .rank {
+  font-weight: 700;
+  color: var(--accent);
+  width: 50px;
+}
+
+.scoreboard-table .name {
+  font-weight: 600;
+}
+
+.scoreboard-table .score {
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.scoreboard-table .max-possible {
+  color: var(--text-muted);
+}
+
+.loading {
+  text-align: center;
+  padding: 3rem;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+}
+
+.error-msg {
+  text-align: center;
+  padding: 2rem;
+  color: var(--red);
+  font-weight: 600;
+}
+
+.last-updated {
+  text-align: right;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin-top: 0.5rem;
+}
+
+/* ─── Bracket Header & Score ───────────────────────────────────────────── */
+
+.bracket-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.bracket-header h2 {
+  font-size: 1.6rem;
+}
+
+.bracket-score-summary {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.bracket-score-summary .stat {
+  text-align: center;
+}
+
+.bracket-score-summary .stat-value {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.bracket-score-summary .stat-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+/* ─── First Four Row ───────────────────────────────────────────────────── */
+
+.ff-row {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow);
+}
+
+.ff-row-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+
+.ff-games {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.ff-games .bracket-game {
+  flex: 1;
+  min-width: 180px;
+  max-width: 280px;
+}
+
+/* ─── Main Bracket Layout (ESPN Style) ─────────────────────────────────── */
+
+.bracket-main {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 0;
+  align-items: stretch;
+}
+
+.bracket-half {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* ─── Region Bracket ───────────────────────────────────────────────────── */
+
+.region-bracket {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  box-shadow: var(--shadow);
+}
+
+.region-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+  text-align: center;
+}
+
+.region-rounds {
+  display: flex;
+  gap: 0;
+  align-items: stretch;
+}
+
+/* ─── Round Columns ────────────────────────────────────────────────────── */
+
+.bracket-round {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.bracket-round-label {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  text-align: center;
+  margin-bottom: 0.4rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.bracket-round-games {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  flex: 1;
+  gap: 2px;
+}
+
+/* ─── Game Card ────────────────────────────────────────────────────────── */
+
+.bracket-game {
+  display: flex;
+  flex-direction: column;
+  margin: 2px 3px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.bracket-team {
+  display: flex;
+  align-items: center;
+  padding: 2px 5px;
+  font-size: 0.68rem;
+  gap: 4px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  min-height: 22px;
+  transition: background 0.15s;
+}
+
+.bracket-team:last-child {
+  border-bottom: none;
+}
+
+.bracket-team .seed {
+  font-weight: 700;
+  color: var(--text-muted);
+  min-width: 16px;
+  text-align: center;
+  font-size: 0.62rem;
+}
+
+.bracket-team .team-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bracket-team.winner {
+  font-weight: 700;
+}
+
+/* ─── Pick Status Colors ──────────────────────────────────────────────── */
+
+.pick-correct {
+  background: var(--green-bg) !important;
+  border-left: 3px solid var(--green);
+}
+
+.pick-correct .team-name {
+  color: var(--green);
+}
+
+.pick-incorrect {
+  background: var(--red-bg) !important;
+  border-left: 3px solid var(--red);
+}
+
+.pick-incorrect .team-name {
+  color: var(--red);
+  text-decoration: line-through;
+}
+
+.pick-pending {
+  background: var(--gray-bg) !important;
+  border-left: 3px solid var(--gray);
+}
+
+.pick-pending .team-name {
+  color: var(--text-muted);
+}
+
+.status-icon {
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+
+/* ─── Submit: Clickable Pick Styling ───────────────────────────────────── */
+
+.bracket-game-pick .bracket-team:not(.team-tbd) {
+  cursor: pointer;
+}
+
+.bracket-game-pick .bracket-team:not(.team-tbd):hover {
+  background: var(--bg-card-hover);
+}
+
+.bracket-team.team-tbd {
+  opacity: 0.4;
+}
+
+.pick-selected {
+  background: rgba(255, 159, 28, 0.18) !important;
+  border-left: 3px solid var(--accent);
+}
+
+.pick-selected .team-name {
+  color: var(--accent);
+}
+
+/* ─── Center Column (Final Four / Championship) ───────────────────────── */
+
+.bracket-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.5rem;
+  min-width: 160px;
+  gap: 0.25rem;
+}
+
+.center-round-label {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin-top: 0.75rem;
+}
+
+.champ-label {
+  color: var(--accent);
+}
+
+.bracket-center .bracket-game {
+  width: 100%;
+  max-width: 180px;
+}
+
+.champion-display {
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--accent);
+  padding: 0.4rem 0;
+}
+
+/* ─── Submit Download Bar ──────────────────────────────────────────────── */
+
+.submit-download-bar {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 1.5rem;
+  padding: 1rem 1.5rem;
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.pick-counter {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.name-input {
+  padding: 0.6rem 1rem;
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.95rem;
+  font-family: var(--font);
+  width: 200px;
+}
+
+.name-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.5rem;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: var(--border);
+  color: var(--text);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-card-hover);
+}
+
+.success-message {
+  background: var(--green-bg);
+  border: 1px solid var(--green);
+  border-radius: var(--radius);
+  padding: 1rem 1.5rem;
+  color: var(--green);
+  margin-top: 1rem;
+  display: none;
+}
+
+/* ─── Legend ────────────────────────────────────────────────────────────── */
+
+.legend {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  font-size: 0.82rem;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.legend-swatch.correct  { background: var(--green); }
+.legend-swatch.incorrect { background: var(--red); }
+.legend-swatch.pending  { background: var(--gray); }
+
+/* ─── Responsive ───────────────────────────────────────────────────────── */
+
+@media (max-width: 1100px) {
+  .bracket-main {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .bracket-center {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: var(--bg-card);
+    border-radius: var(--radius);
+  }
+
+  .bracket-center .bracket-game {
+    max-width: 200px;
+  }
+
+  .center-round-label {
+    width: 100%;
+    text-align: center;
+  }
+}
+
+@media (max-width: 768px) {
+  .site-header {
+    padding: 0.75rem 1rem;
+  }
+
+  .container {
+    padding: 0.75rem;
+  }
+
+  .bracket-team {
+    font-size: 0.6rem;
+    padding: 2px 3px;
+    min-height: 18px;
+  }
+
+  .bracket-team .seed {
+    font-size: 0.55rem;
+    min-width: 14px;
+  }
+
+  .scoreboard-table th,
+  .scoreboard-table td {
+    padding: 0.5rem 0.6rem;
+    font-size: 0.85rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .site-header h1 {
+    font-size: 1.1rem;
+  }
+
+  .site-nav {
+    gap: 1rem;
+    font-size: 0.85rem;
+  }
+
+  .bracket-score-summary {
+    gap: 1rem;
+  }
+
+  .bracket-score-summary .stat-value {
+    font-size: 1.4rem;
+  }
+}

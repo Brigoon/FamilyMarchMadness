@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>March Madness Bracket — Submit</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <h1><span class="emoji">🏀</span> March Madness Bracket</h1>
+    <nav class="site-nav">
+      <a href="index.html">Scoreboard</a>
+      <a href="submit.html" class="active">Submit Bracket</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <div id="submit-loading" class="loading">Loading tournament data…</div>
+    <div id="submit-error" class="error-msg" style="display:none;"></div>
+
+    <div id="submit-content" style="display:none;">
+      <div id="bracket-container"></div>
+
+      <div class="submit-download-bar">
+        <input type="text" class="name-input" id="submitter-name" placeholder="Your Name" maxlength="50">
+        <button class="btn btn-primary" id="btn-download" disabled>Download Bracket</button>
+        <span class="pick-counter" id="pick-counter">0 / 67 picks</span>
+      </div>
+      <div class="success-message" id="success-msg">
+        ✅ Bracket downloaded! <strong>Add your file to the <code>picks/</code> folder</strong>
+        and add your filename to <code>picks/manifest.json</code> to appear on the scoreboard.
+      </div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+  <script>
+    (function () {
+      const loadingEl = document.getElementById('submit-loading');
+      const errorEl = document.getElementById('submit-error');
+      const contentEl = document.getElementById('submit-content');
+      const containerEl = document.getElementById('bracket-container');
+      const nameInput = document.getElementById('submitter-name');
+      const btnDownload = document.getElementById('btn-download');
+      const successMsg = document.getElementById('success-msg');
+      const pickCounter = document.getElementById('pick-counter');
+
+      let tournament = null;
+
+      const userPicks = {
+        firstFour: {},
+        roundOf64: {},
+        roundOf32: {},
+        sweetSixteen: {},
+        eliteEight: {},
+        finalFour: {},
+        championship: null,
+      };
+
+      function showError(msg) {
+        loadingEl.style.display = 'none';
+        errorEl.textContent = msg;
+        errorEl.style.display = 'block';
+      }
+
+      function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+      }
+
+      async function init() {
+        try {
+          tournament = await loadTournament();
+          loadingEl.style.display = 'none';
+          contentEl.style.display = 'block';
+          renderFullBracket();
+        } catch (err) {
+          showError(`Error loading tournament: ${err.message}`);
+        }
+      }
+
+      function renderFullBracket() {
+        containerEl.innerHTML = '';
+
+        // ── First Four row at top ──
+        if (tournament.firstFour.length > 0) {
+          const ffRow = document.createElement('div');
+          ffRow.className = 'ff-row';
+          ffRow.innerHTML = '<div class="ff-row-label">First Four</div>';
+          const ffGames = document.createElement('div');
+          ffGames.className = 'ff-games';
+          for (const ff of tournament.firstFour) {
+            ffGames.appendChild(createPickGameEl(
+              ff.id, 'firstFour',
+              ff.teams[0].name, ff.teams[0].seed,
+              ff.teams[1].name, ff.teams[1].seed
+            ));
+          }
+          ffRow.appendChild(ffGames);
+          containerEl.appendChild(ffRow);
+        }
+
+        // ── Main bracket ──
+        const bracketMain = document.createElement('div');
+        bracketMain.className = 'bracket-main';
+
+        // Left half: East (top) + South (bottom)
+        const leftHalf = document.createElement('div');
+        leftHalf.className = 'bracket-half bracket-left';
+        leftHalf.appendChild(buildRegionSubmit(tournament.regions[0], 'ltr'));
+        leftHalf.appendChild(buildRegionSubmit(tournament.regions[2], 'ltr'));
+        bracketMain.appendChild(leftHalf);
+
+        // Center column (Final Four + Championship)
+        const centerCol = document.createElement('div');
+        centerCol.className = 'bracket-center';
+
+        const ff1Label = document.createElement('div');
+        ff1Label.className = 'center-round-label';
+        ff1Label.textContent = 'Final Four';
+        centerCol.appendChild(ff1Label);
+        centerCol.appendChild(createPickGameEl('FF_1', 'finalFour', 'TBD', '?', 'TBD', '?'));
+
+        const champLabel = document.createElement('div');
+        champLabel.className = 'center-round-label champ-label';
+        champLabel.textContent = 'Championship';
+        centerCol.appendChild(champLabel);
+        centerCol.appendChild(createPickGameEl('championship', 'championship', 'TBD', '?', 'TBD', '?'));
+
+        const champDisplay = document.createElement('div');
+        champDisplay.className = 'champion-display';
+        champDisplay.id = 'champion-display';
+        champDisplay.innerHTML = '🏆 <strong>—</strong>';
+        centerCol.appendChild(champDisplay);
+
+        const ff2Label = document.createElement('div');
+        ff2Label.className = 'center-round-label';
+        ff2Label.textContent = 'Final Four';
+        centerCol.appendChild(ff2Label);
+        centerCol.appendChild(createPickGameEl('FF_2', 'finalFour', 'TBD', '?', 'TBD', '?'));
+
+        bracketMain.appendChild(centerCol);
+
+        // Right half: West (top) + Midwest (bottom)
+        const rightHalf = document.createElement('div');
+        rightHalf.className = 'bracket-half bracket-right';
+        rightHalf.appendChild(buildRegionSubmit(tournament.regions[1], 'rtl'));
+        rightHalf.appendChild(buildRegionSubmit(tournament.regions[3], 'rtl'));
+        bracketMain.appendChild(rightHalf);
+
+        containerEl.appendChild(bracketMain);
+      }
+
+      function buildRegionSubmit(region, direction) {
+        const regionEl = document.createElement('div');
+        regionEl.className = 'region-bracket';
+
+        const label = document.createElement('div');
+        label.className = 'region-label';
+        label.textContent = `${region} Region`;
+        regionEl.appendChild(label);
+
+        const roundsEl = document.createElement('div');
+        roundsEl.className = 'region-rounds';
+
+        const columns = [];
+
+        // R64
+        const r64Col = createRoundCol('Rd of 64');
+        for (let i = 0; i < SEED_MATCHUPS_64.length; i++) {
+          const [seedA, seedB] = SEED_MATCHUPS_64[i];
+          const slot = `${region}_${i + 1}`;
+          const teamA = getTeamNameForSeed(region, seedA);
+          const teamB = getTeamNameForSeed(region, seedB);
+          r64Col.games.appendChild(createPickGameEl(slot, 'roundOf64', teamA, seedA, teamB, seedB));
+        }
+        columns.push(r64Col.el);
+
+        // R32
+        const r32Col = createRoundCol('Rd of 32');
+        for (let i = 1; i <= 4; i++) {
+          const slot = `${region}_${i}`;
+          r32Col.games.appendChild(createPickGameEl(slot, 'roundOf32', 'TBD', '?', 'TBD', '?'));
+        }
+        columns.push(r32Col.el);
+
+        // Sweet 16
+        const s16Col = createRoundCol('Sweet 16');
+        for (let i = 1; i <= 2; i++) {
+          const slot = `${region}_${i}`;
+          s16Col.games.appendChild(createPickGameEl(slot, 'sweetSixteen', 'TBD', '?', 'TBD', '?'));
+        }
+        columns.push(s16Col.el);
+
+        // Elite 8
+        const e8Col = createRoundCol('Elite 8');
+        e8Col.games.appendChild(createPickGameEl(region, 'eliteEight', 'TBD', '?', 'TBD', '?'));
+        columns.push(e8Col.el);
+
+        const ordered = direction === 'rtl' ? columns.reverse() : columns;
+        for (const col of ordered) roundsEl.appendChild(col);
+
+        regionEl.appendChild(roundsEl);
+        return regionEl;
+      }
+
+      function createRoundCol(label) {
+        const el = document.createElement('div');
+        el.className = 'bracket-round';
+        el.innerHTML = `<div class="bracket-round-label">${escapeHtml(label)}</div>`;
+        const games = document.createElement('div');
+        games.className = 'bracket-round-games';
+        el.appendChild(games);
+        return { el, games };
+      }
+
+      function getTeamNameForSeed(region, seed) {
+        const ffGame = tournament.firstFour.find(ff =>
+          ff.teams[0].seed === seed && ff.teams[0].region === region
+        );
+        if (ffGame) {
+          return userPicks.firstFour[ffGame.id] || `Winner of ${ffGame.id}`;
+        }
+        const t = tournament.teams.find(t => t.region === region && t.seed === seed);
+        return t ? t.name : 'TBD';
+      }
+
+      /** Create a clickable two-team game for submission */
+      function createPickGameEl(slot, round, teamA, seedA, teamB, seedB) {
+        const game = document.createElement('div');
+        game.className = 'bracket-game bracket-game-pick';
+        game.dataset.slot = slot;
+        game.dataset.round = round;
+
+        function updateTeamDisplay() {
+          // Clear and rebuild
+          game.innerHTML = '';
+          let currentTeamA = teamA;
+          let currentTeamB = teamB;
+          let currentSeedA = seedA;
+          let currentSeedB = seedB;
+
+          // For rounds after R64, populate from user's previous picks
+          if (round === 'roundOf32') {
+            const region = slot.split('_')[0];
+            const idx = parseInt(slot.split('_')[1]);
+            currentTeamA = userPicks.roundOf64[`${region}_${2*idx-1}`] || 'TBD';
+            currentTeamB = userPicks.roundOf64[`${region}_${2*idx}`] || 'TBD';
+            currentSeedA = currentTeamA !== 'TBD' ? getTeamSeed(currentTeamA, tournament) : '?';
+            currentSeedB = currentTeamB !== 'TBD' ? getTeamSeed(currentTeamB, tournament) : '?';
+          } else if (round === 'sweetSixteen') {
+            const region = slot.split('_')[0];
+            const idx = parseInt(slot.split('_')[1]);
+            currentTeamA = userPicks.roundOf32[`${region}_${2*idx-1}`] || 'TBD';
+            currentTeamB = userPicks.roundOf32[`${region}_${2*idx}`] || 'TBD';
+            currentSeedA = currentTeamA !== 'TBD' ? getTeamSeed(currentTeamA, tournament) : '?';
+            currentSeedB = currentTeamB !== 'TBD' ? getTeamSeed(currentTeamB, tournament) : '?';
+          } else if (round === 'eliteEight') {
+            const region = slot;
+            currentTeamA = userPicks.sweetSixteen[`${region}_1`] || 'TBD';
+            currentTeamB = userPicks.sweetSixteen[`${region}_2`] || 'TBD';
+            currentSeedA = currentTeamA !== 'TBD' ? getTeamSeed(currentTeamA, tournament) : '?';
+            currentSeedB = currentTeamB !== 'TBD' ? getTeamSeed(currentTeamB, tournament) : '?';
+          } else if (round === 'finalFour') {
+            if (slot === 'FF_1') {
+              currentTeamA = userPicks.eliteEight[tournament.regions[0]] || 'TBD';
+              currentTeamB = userPicks.eliteEight[tournament.regions[2]] || 'TBD';
+            } else {
+              currentTeamA = userPicks.eliteEight[tournament.regions[1]] || 'TBD';
+              currentTeamB = userPicks.eliteEight[tournament.regions[3]] || 'TBD';
+            }
+            currentSeedA = currentTeamA !== 'TBD' ? getTeamSeed(currentTeamA, tournament) : '?';
+            currentSeedB = currentTeamB !== 'TBD' ? getTeamSeed(currentTeamB, tournament) : '?';
+          } else if (round === 'championship') {
+            currentTeamA = userPicks.finalFour['FF_1'] || 'TBD';
+            currentTeamB = userPicks.finalFour['FF_2'] || 'TBD';
+            currentSeedA = currentTeamA !== 'TBD' ? getTeamSeed(currentTeamA, tournament) : '?';
+            currentSeedB = currentTeamB !== 'TBD' ? getTeamSeed(currentTeamB, tournament) : '?';
+          } else if (round === 'roundOf64') {
+            // Re-resolve First Four winners
+            const region = slot.split('_')[0];
+            const idx = parseInt(slot.split('_')[1]) - 1;
+            const [sA, sB] = SEED_MATCHUPS_64[idx];
+            currentTeamA = getTeamNameForSeed(region, sA);
+            currentTeamB = getTeamNameForSeed(region, sB);
+            currentSeedA = sA;
+            currentSeedB = sB;
+          }
+
+          const currentPick = round === 'championship' ? userPicks.championship : (userPicks[round] && userPicks[round][slot]);
+
+          function makeTeamRow(name, seed, isSelected) {
+            const div = document.createElement('div');
+            const isTBD = !name || name === 'TBD' || name.startsWith('Winner of');
+            div.className = 'bracket-team' + (isSelected ? ' pick-selected winner' : '') + (isTBD ? ' team-tbd' : '');
+            div.innerHTML = `
+              <span class="seed">${escapeHtml(String(seed))}</span>
+              <span class="team-name">${escapeHtml(name)}</span>
+            `;
+            if (!isTBD) {
+              div.style.cursor = 'pointer';
+              div.addEventListener('click', () => {
+                if (round === 'championship') {
+                  userPicks.championship = name;
+                } else {
+                  userPicks[round][slot] = name;
+                }
+                propagatePicks(round, slot);
+                refreshAllGames();
+                updatePickCounter();
+              });
+            }
+            return div;
+          }
+
+          game.appendChild(makeTeamRow(currentTeamA, currentSeedA, currentPick === currentTeamA && currentTeamA !== 'TBD'));
+          game.appendChild(makeTeamRow(currentTeamB, currentSeedB, currentPick === currentTeamB && currentTeamB !== 'TBD'));
+        }
+
+        // Store the update function on the element for later refresh
+        game._update = updateTeamDisplay;
+        updateTeamDisplay();
+        return game;
+      }
+
+      /** When a pick changes, clear downstream picks that depended on it */
+      function propagatePicks(changedRound, changedSlot) {
+        const roundIdx = ROUND_ORDER.indexOf(changedRound);
+        // For each subsequent round, check if any pick references a team
+        // that is no longer feeding into that slot. Simplest: just clear
+        // downstream slots that are fed by this slot.
+
+        if (changedRound === 'firstFour') {
+          // Affects a specific R64 slot. Find which R64 slot uses this FF winner.
+          const ff = tournament.firstFour.find(f => f.id === changedSlot);
+          if (ff) {
+            const region = ff.teams[0].region;
+            const seed = ff.teams[0].seed;
+            // Find which R64 matchup includes this seed
+            for (let i = 0; i < SEED_MATCHUPS_64.length; i++) {
+              if (SEED_MATCHUPS_64[i][0] === seed || SEED_MATCHUPS_64[i][1] === seed) {
+                const r64Slot = `${region}_${i + 1}`;
+                clearDownstream('roundOf64', r64Slot, region);
+                break;
+              }
+            }
+          }
+        } else if (changedRound === 'roundOf64') {
+          const region = changedSlot.split('_')[0];
+          clearDownstream('roundOf64', changedSlot, region);
+        } else if (changedRound === 'roundOf32') {
+          const region = changedSlot.split('_')[0];
+          clearDownstream('roundOf32', changedSlot, region);
+        } else if (changedRound === 'sweetSixteen') {
+          const region = changedSlot.split('_')[0];
+          clearDownstream('sweetSixteen', changedSlot, region);
+        } else if (changedRound === 'eliteEight') {
+          clearDownstream('eliteEight', changedSlot, changedSlot);
+        } else if (changedRound === 'finalFour') {
+          // Champ pick may need clearing
+          const champTeam = userPicks.championship;
+          const ff1 = userPicks.finalFour['FF_1'];
+          const ff2 = userPicks.finalFour['FF_2'];
+          if (champTeam && champTeam !== ff1 && champTeam !== ff2) {
+            userPicks.championship = null;
+          }
+        }
+      }
+
+      /** Clear picks in later rounds when earlier-round picks change */
+      function clearDownstream(round, slot, region) {
+        if (round === 'roundOf64') {
+          const idx = parseInt(slot.split('_')[1]);
+          const r32Slot = `${region}_${Math.ceil(idx / 2)}`;
+          const r32Pick = userPicks.roundOf32[r32Slot];
+          const newA = userPicks.roundOf64[`${region}_${2*Math.ceil(idx/2)-1}`];
+          const newB = userPicks.roundOf64[`${region}_${2*Math.ceil(idx/2)}`];
+          if (r32Pick && r32Pick !== newA && r32Pick !== newB) {
+            delete userPicks.roundOf32[r32Slot];
+            clearDownstream('roundOf32', r32Slot, region);
+          }
+        } else if (round === 'roundOf32') {
+          const idx = parseInt(slot.split('_')[1]);
+          const s16Slot = `${region}_${Math.ceil(idx / 2)}`;
+          const s16Pick = userPicks.sweetSixteen[s16Slot];
+          const newA = userPicks.roundOf32[`${region}_${2*Math.ceil(idx/2)-1}`];
+          const newB = userPicks.roundOf32[`${region}_${2*Math.ceil(idx/2)}`];
+          if (s16Pick && s16Pick !== newA && s16Pick !== newB) {
+            delete userPicks.sweetSixteen[s16Slot];
+            clearDownstream('sweetSixteen', s16Slot, region);
+          }
+        } else if (round === 'sweetSixteen') {
+          const e8Pick = userPicks.eliteEight[region];
+          const newA = userPicks.sweetSixteen[`${region}_1`];
+          const newB = userPicks.sweetSixteen[`${region}_2`];
+          if (e8Pick && e8Pick !== newA && e8Pick !== newB) {
+            delete userPicks.eliteEight[region];
+            clearDownstream('eliteEight', region, region);
+          }
+        } else if (round === 'eliteEight') {
+          // Check both FF slots
+          const regions = tournament.regions;
+          const ff1A = userPicks.eliteEight[regions[0]];
+          const ff1B = userPicks.eliteEight[regions[2]];
+          const ff2A = userPicks.eliteEight[regions[1]];
+          const ff2B = userPicks.eliteEight[regions[3]];
+          const ff1Pick = userPicks.finalFour['FF_1'];
+          const ff2Pick = userPicks.finalFour['FF_2'];
+          if (ff1Pick && ff1Pick !== ff1A && ff1Pick !== ff1B) {
+            delete userPicks.finalFour['FF_1'];
+          }
+          if (ff2Pick && ff2Pick !== ff2A && ff2Pick !== ff2B) {
+            delete userPicks.finalFour['FF_2'];
+          }
+          // Check champ
+          const champTeam = userPicks.championship;
+          const newFF1 = userPicks.finalFour['FF_1'];
+          const newFF2 = userPicks.finalFour['FF_2'];
+          if (champTeam && champTeam !== newFF1 && champTeam !== newFF2) {
+            userPicks.championship = null;
+          }
+        }
+      }
+
+      /** Refresh all game elements on the page */
+      function refreshAllGames() {
+        document.querySelectorAll('.bracket-game-pick').forEach(g => {
+          if (g._update) g._update();
+        });
+        // Update champion display
+        const cd = document.getElementById('champion-display');
+        if (cd) {
+          cd.innerHTML = userPicks.championship
+            ? `🏆 <strong>${escapeHtml(userPicks.championship)}</strong>`
+            : '🏆 <strong>—</strong>';
+        }
+      }
+
+      function countTotalSlots() {
+        return 4 + 32 + 16 + 8 + 4 + 2 + 1; // 67
+      }
+
+      function countFilledSlots() {
+        let count = 0;
+        count += Object.values(userPicks.firstFour).filter(Boolean).length;
+        count += Object.values(userPicks.roundOf64).filter(Boolean).length;
+        count += Object.values(userPicks.roundOf32).filter(Boolean).length;
+        count += Object.values(userPicks.sweetSixteen).filter(Boolean).length;
+        count += Object.values(userPicks.eliteEight).filter(Boolean).length;
+        count += Object.values(userPicks.finalFour).filter(Boolean).length;
+        if (userPicks.championship) count++;
+        return count;
+      }
+
+      function updatePickCounter() {
+        const filled = countFilledSlots();
+        const total = countTotalSlots();
+        pickCounter.textContent = `${filled} / ${total} picks`;
+        updateDownloadButton();
+      }
+
+      function updateDownloadButton() {
+        const name = nameInput.value.trim();
+        const allFilled = countFilledSlots() >= countTotalSlots();
+        btnDownload.disabled = !(name && allFilled);
+      }
+
+      nameInput.addEventListener('input', updateDownloadButton);
+
+      btnDownload.addEventListener('click', () => {
+        const name = nameInput.value.trim();
+        if (!name) return;
+
+        const picksData = {
+          submitter: name,
+          firstFour: { ...userPicks.firstFour },
+          roundOf64: { ...userPicks.roundOf64 },
+          roundOf32: { ...userPicks.roundOf32 },
+          sweetSixteen: { ...userPicks.sweetSixteen },
+          eliteEight: { ...userPicks.eliteEight },
+          finalFour: { ...userPicks.finalFour },
+          championship: userPicks.championship,
+        };
+
+        const json = JSON.stringify(picksData, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const filename = name.toLowerCase().replace(/\s+/g, '-') + '.json';
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        successMsg.style.display = 'block';
+      });
+
+      init();
+    })();
+  </script>
+</body>
+</html>

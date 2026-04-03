@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>March Madness Bracket — Scoreboard</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <h1><span class="emoji">🏀</span> March Madness Bracket</h1>
+    <nav class="site-nav">
+      <a href="index.html" class="active">Scoreboard</a>
+      <a href="submit.html">Submit Bracket</a>
+    </nav>
+  </header>
+
+  <main class="container container-narrow">
+    <div id="scoreboard-loading" class="loading">Loading scoreboard…</div>
+    <div id="scoreboard-error" class="error-msg" style="display:none;"></div>
+
+    <table class="scoreboard-table" id="scoreboard-table" style="display:none;">
+      <thead>
+        <tr>
+          <th class="rank">#</th>
+          <th>Name</th>
+          <th>Score</th>
+          <th>Max Possible</th>
+        </tr>
+      </thead>
+      <tbody id="scoreboard-body"></tbody>
+    </table>
+
+    <div id="last-updated" class="last-updated" style="display:none;"></div>
+  </main>
+
+  <script src="app.js"></script>
+  <script>
+    (function () {
+      const loadingEl = document.getElementById('scoreboard-loading');
+      const errorEl = document.getElementById('scoreboard-error');
+      const tableEl = document.getElementById('scoreboard-table');
+      const tbodyEl = document.getElementById('scoreboard-body');
+      const updatedEl = document.getElementById('last-updated');
+
+      async function refreshScoreboard() {
+        try {
+          const [tournament, results, allPicks] = await Promise.all([
+            loadTournament(),
+            loadResults(),
+            loadAllPicks(),
+          ]);
+
+          if (allPicks.length === 0) {
+            loadingEl.style.display = 'none';
+            errorEl.textContent = 'No picks found. Add participant files to the picks/ folder.';
+            errorEl.style.display = 'block';
+            tableEl.style.display = 'none';
+            return;
+          }
+
+          // Score each participant
+          const scores = allPicks.map(p => scorePicks(p, results, tournament));
+
+          // Sort: by current score desc, then max possible desc
+          scores.sort((a, b) => {
+            if (b.currentScore !== a.currentScore) return b.currentScore - a.currentScore;
+            return b.maxPossible - a.maxPossible;
+          });
+
+          // Render
+          tbodyEl.innerHTML = '';
+          scores.forEach((s, i) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+              <td class="rank">${i + 1}</td>
+              <td class="name">${escapeHtml(s.name)}</td>
+              <td class="score">${s.currentScore}</td>
+              <td class="max-possible">${s.maxPossible}</td>
+            `;
+            // Encode the submitter name for the bracket link
+            const nameParam = encodeURIComponent(s.name.toLowerCase().replace(/\s+/g, '-'));
+            tr.addEventListener('click', () => {
+              // Find the matching pick filename from manifest
+              // We'll match by submitter name
+              window.location.href = `bracket.html?name=${nameParam}`;
+            });
+            tbodyEl.appendChild(tr);
+          });
+
+          loadingEl.style.display = 'none';
+          tableEl.style.display = 'table';
+          updatedEl.style.display = 'block';
+          updatedEl.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+        } catch (err) {
+          loadingEl.style.display = 'none';
+          errorEl.textContent = `Error loading data: ${err.message}`;
+          errorEl.style.display = 'block';
+        }
+      }
+
+      function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+      }
+
+      // Initial load
+      refreshScoreboard();
+
+      // Auto-refresh every 60 seconds
+      setInterval(refreshScoreboard, 60000);
+    })();
+  </script>
+</body>
+</html>
