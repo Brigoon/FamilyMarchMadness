@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>March Madness Bracket — Detail</title>
   <link rel="stylesheet" href="styles.css">
+  <script src="config.js"></script>
 </head>
 <body>
   <header class="site-header">
@@ -76,22 +77,19 @@
 
       async function loadBracket() {
         try {
-          const [tournament, results, manifest] = await Promise.all([
+          const [tournament, results, allPicks] = await Promise.all([
             loadTournament(),
             loadResults(),
-            fetchJSON('picks/manifest.json'),
+            loadAllPicks(),
           ]);
 
           let picks = null;
-          for (const filename of manifest.participants) {
-            try {
-              const p = await fetchJSON(`picks/${filename}`);
-              const normalized = p.submitter.toLowerCase().replace(/\s+/g, '-');
-              if (normalized === nameParam) {
-                picks = p;
-                break;
-              }
-            } catch(e) {}
+          for (const p of allPicks) {
+            const normalized = p.submitter.toLowerCase().replace(/\s+/g, '-');
+            if (normalized === nameParam) {
+              picks = p;
+              break;
+            }
           }
 
           if (!picks) {

@@ -68,14 +68,12 @@ async function loadResults() {
   return fetchJSON('results.json');
 }
 
-/** Load picks/manifest.json and then every referenced pick file. */
+/** Load all picks from Google Apps Script. */
 async function loadAllPicks() {
-  const manifest = await fetchJSON('picks/manifest.json');
-  const picks = await Promise.all(
-    manifest.participants.map(f => fetchJSON(`picks/${f}`).catch(() => null))
-  );
-  // Filter out any that failed to load
-  return picks.filter(Boolean);
+  const res = await fetch(APPS_SCRIPT_URL);
+  if (!res.ok) throw new Error(`Failed to fetch picks: ${res.status}`);
+  const data = await res.json();
+  return Array.isArray(data) ? data.filter(Boolean) : [];
 }
 
 // ─── BRACKET STRUCTURE HELPERS ───────────────────────────────────────────────

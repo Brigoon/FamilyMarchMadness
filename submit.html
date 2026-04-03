@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>March Madness Bracket — Submit</title>
   <link rel="stylesheet" href="styles.css">
+  <script src="config.js"></script>
 </head>
 <body>
   <header class="site-header">
@@ -24,13 +25,13 @@
 
       <div class="submit-download-bar">
         <input type="text" class="name-input" id="submitter-name" placeholder="Your Name" maxlength="50">
-        <button class="btn btn-primary" id="btn-download" disabled>Download Bracket</button>
+        <button class="btn btn-primary" id="btn-submit" disabled>Submit Bracket</button>
         <span class="pick-counter" id="pick-counter">0 / 67 picks</span>
       </div>
       <div class="success-message" id="success-msg">
-        ✅ Bracket downloaded! <strong>Add your file to the <code>picks/</code> folder</strong>
-        and add your filename to <code>picks/manifest.json</code> to appear on the scoreboard.
+        ✅ Bracket submitted successfully! Your picks are now on the scoreboard.
       </div>
+      <div class="error-msg" id="submit-error-msg" style="display:none;"></div>
     </div>
   </main>
 
@@ -42,7 +43,7 @@
       const contentEl = document.getElementById('submit-content');
       const containerEl = document.getElementById('bracket-container');
       const nameInput = document.getElementById('submitter-name');
-      const btnDownload = document.getElementById('btn-download');
+      const btnSubmit = document.getElementById('btn-submit');
       const successMsg = document.getElementById('success-msg');
       const pickCounter = document.getElementById('pick-counter');
 
@@ -458,20 +459,23 @@
         const filled = countFilledSlots();
         const total = countTotalSlots();
         pickCounter.textContent = `${filled} / ${total} picks`;
-        updateDownloadButton();
+        updateSubmitButton();
       }
 
-      function updateDownloadButton() {
+      function updateSubmitButton() {
         const name = nameInput.value.trim();
         const allFilled = countFilledSlots() >= countTotalSlots();
-        btnDownload.disabled = !(name && allFilled);
+        btnSubmit.disabled = !(name && allFilled);
       }
 
-      nameInput.addEventListener('input', updateDownloadButton);
+      nameInput.addEventListener('input', updateSubmitButton);
 
-      btnDownload.addEventListener('click', () => {
+      btnSubmit.addEventListener('click', async () => {
         const name = nameInput.value.trim();
         if (!name) return;
+
+        const submitErrorMsg = document.getElementById('submit-error-msg');
+        submitErrorMsg.style.display = 'none';
 
         const picksData = {
           submitter: name,
@@ -484,20 +488,28 @@
           championship: userPicks.championship,
         };
 
-        const json = JSON.stringify(picksData, null, 2);
-        const blob = new Blob([json], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const filename = name.toLowerCase().replace(/\s+/g, '-') + '.json';
+        // Submit to Google Apps Script
+        btnSubmit.disabled = true;
+        btnSubmit.textContent = 'Submitting\u2026';
 
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-
-        successMsg.style.display = 'block';
+        try {
+          const res = await fetch(APPS_SCRIPT_URL, {
+            method: 'POST',
+            body: JSON.stringify(picksData),
+          });
+          const result = await res.json();
+          if (result.success) {
+            successMsg.style.display = 'block';
+            btnSubmit.textContent = 'Submitted \u2705';
+          } else {
+            throw new Error(result.error || 'Unknown error');
+          }
+        } catch (err) {
+          submitErrorMsg.textContent = `Failed to submit: ${err.message}. Please try again.`;
+          submitErrorMsg.style.display = 'block';
+          btnSubmit.disabled = false;
+          btnSubmit.textContent = 'Submit Bracket';
+        }
       });
 
       init();

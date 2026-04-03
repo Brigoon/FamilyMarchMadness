@@ -1,24 +1,52 @@
 # March Madness Bracket
 
-A static March Madness bracket submission and scoring website for a small family group. No backend or authentication — all data is managed via local JSON config files and the site is served statically (e.g., GitHub Pages).
+A static March Madness bracket submission and scoring website for a small family group. Brackets can be submitted directly from the browser using a Google Apps Script backend — no downloads or manual file management required. The site is served statically (e.g., GitHub Pages).
 
 ## Quick Start
 
-1. Serve the files with any static server (or push to GitHub Pages)
-2. Open `index.html` for the scoreboard
-3. Open `submit.html` to fill out a bracket
-4. View individual brackets at `bracket.html?name=brian`
+1. Set up cloud bracket storage (see **Google Apps Script Setup** below)
+2. Serve the files with any static server (or push to GitHub Pages)
+3. Open `index.html` for the scoreboard
+4. Open `submit.html` to fill out and submit a bracket
+5. View individual brackets at `bracket.html?name=brian`
+
+## Google Apps Script Setup
+
+This allows brackets to be submitted and stored automatically in a Google Sheet.
+
+1. Go to [script.google.com](https://script.google.com) and create a new project
+2. Replace the contents of `Code.gs` with the code from `google-apps-script.js` in this repo
+3. Click **Deploy → New deployment**
+4. Choose **Web app** as the type
+5. Set **Execute as** to your Google account
+6. Set **Who has access** to **Anyone**
+7. Click **Deploy** and copy the web app URL
+8. Paste the URL into `config.js`:
+   ```js
+   const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/YOUR_ID/exec';
+   ```
+9. Commit and push — brackets are now submitted and loaded automatically
+
+> **Note:** If `APPS_SCRIPT_URL` is left empty, the site falls back to the original local file mode (download JSON + manual placement in `picks/` folder).
 
 ## How It Works
 
 ### Adding a New Participant
+
+When Google Apps Script is configured, participants simply visit `submit.html`, fill out their bracket, enter their name, and click **Submit Bracket**. Their picks are automatically saved to the Google Sheet and immediately appear on the scoreboard.
+
+If submitting with the same name, the previous entry is overwritten (allows corrections).
+
+#### Local Mode (fallback, no Apps Script)
+
+If `APPS_SCRIPT_URL` is not set in `config.js`:
 
 1. Have them fill out their bracket at `submit.html` and download the `.json` file
 2. Place the downloaded file in the `picks/` folder
 3. Add the filename to `picks/manifest.json`:
    ```json
    {
-     "participants": ["example.json", "brian.json", "sarah.json"]
+     "participants": ["brian.json", "sarah.json"]
    }
    ```
 4. Commit and push (if using GitHub Pages)
@@ -104,21 +132,24 @@ The scoreboard auto-refreshes every 60 seconds, so updating `results.json` and p
 
 ```
 /
-├── index.html          # Scoreboard
-├── bracket.html        # Individual bracket view
-├── submit.html         # Bracket submission form
-├── styles.css          # Shared styles
-├── app.js              # Scoring engine & data utilities
-├── tournament.json     # Tournament field definition
-├── results.json        # Game results (manually updated)
+├── index.html              # Scoreboard
+├── bracket.html            # Individual bracket view
+├── submit.html             # Bracket submission form
+├── styles.css              # Shared styles
+├── app.js                  # Scoring engine & data utilities
+├── config.js               # Apps Script URL configuration
+├── google-apps-script.js   # Code to paste into Google Apps Script
+├── tournament.json         # Tournament field definition
+├── results.json            # Game results (manually updated)
 ├── README.md
-└── picks/
-    ├── manifest.json   # List of participant filenames
-    └── example.json    # Example picks file
+└── picks/                  # Local fallback picks (used when no Apps Script)
+    ├── manifest.json
+    └── *.json
 ```
 
 ## Tech Stack
 
 - Vanilla HTML, CSS, JavaScript — no build step, no frameworks, no CDN dependencies
-- All data loaded via `fetch()` from relative paths
+- Optional Google Apps Script backend for cloud bracket storage (free, no additional accounts needed)
+- All data loaded via `fetch()` from relative paths or Apps Script endpoint
 - Works on GitHub Pages or any static file server
