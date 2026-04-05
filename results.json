@@ -73,6 +73,9 @@
     "South": "Illinois",
     "Midwest": "Michigan"
   },
-  "finalFour": {},
+  "finalFour": {
+    "FF_1": "UConn",
+    "FF_2": "Michigan"
+  },
   "championship": null
 }
