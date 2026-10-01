@@ -164,6 +164,22 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
   margin-top: 0.5rem;
 }
 
+.info-banner {
+  background: var(--bg-card);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 0.75rem 1.25rem;
+  margin-bottom: 1rem;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.info-banner.closed {
+  border-color: var(--red);
+  color: var(--red);
+  font-weight: 600;
+}
+
 /* ─── Bracket Header & Score ───────────────────────────────────────────── */
 
 .bracket-header {
@@ -200,7 +216,7 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
   text-transform: uppercase;
 }
 
-/* ─── First Four Row ───────────────────────────────────────────────────── */
+/* ─── Opening Round Row ───────────────────────────────────────────────── */
 
 .ff-row {
   background: var(--bg-card);

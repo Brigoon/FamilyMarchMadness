@@ -12,44 +12,45 @@ A static March Madness bracket submission and scoring website for a small family
 
 ## Google Apps Script Setup
 
-This allows brackets to be submitted and stored automatically in a Google Sheet.
+Brackets are stored in a Google Sheet through a Google Apps Script web app. The script enforces who can submit, who can edit, and when.
 
 1. Go to [script.google.com](https://script.google.com) and create a new project
 2. Replace the contents of `Code.gs` with the code from `google-apps-script.js` in this repo
-3. Click **Deploy → New deployment**
-4. Choose **Web app** as the type
-5. Set **Execute as** to your Google account
-6. Set **Who has access** to **Anyone**
-7. Click **Deploy** and copy the web app URL
-8. Paste the URL into `config.js`:
+3. Run the `setup` function once and authorize it. It creates the spreadsheet (URL is in the execution log) with three tabs: `Brackets`, `Config` and `History`
+4. In the spreadsheet's `Config` tab, fill in:
+   - **Deadline**: ISO time with UTC offset, e.g. `2027-03-18T12:15:00-04:00`
+   - **Family Passcode**: any phrase you share with the family (never commit it to the repo)
+5. Click **Deploy → New deployment**, choose **Web app**, set **Execute as** to your Google account and **Who has access** to **Anyone**
+6. Copy the web app URL into `config.js`:
    ```js
    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/YOUR_ID/exec';
    ```
-9. Commit and push — brackets are now submitted and loaded automatically
+7. Commit and push
 
-> **Note:** If `APPS_SCRIPT_URL` is left empty, the site falls back to the original local file mode (download JSON + manual placement in `picks/` folder).
+**Updating an existing deployment:** Deploy → Manage deployments → Edit (pencil) → Version: **New version** → Deploy. The URL stays the same. If you are upgrading from the old script, clear the old `Brackets` rows first (the pick format changed).
+
+Optionally run `selfTest` in the Apps Script editor to check the validation helpers.
 
 ## How It Works
 
-### Adding a New Participant
+### Submitting and Editing Brackets
 
-When Google Apps Script is configured, participants simply visit `submit.html`, fill out their bracket, enter their name, and click **Submit Bracket**. Their picks are automatically saved to the Google Sheet and immediately appear on the scoreboard.
+Participants visit `submit.html`, fill out their bracket, and enter their name, the family passcode, and a PIN.
 
-If submitting with the same name, the previous entry is overwritten (allows corrections).
+- **Passcode:** required for every submission. Anyone without it is rejected.
+- **PIN:** the first submission under a name claims it with the PIN chosen. Later edits to that name need the same PIN, so nobody else can change it. **Load My Bracket** pre-fills the form with an existing bracket.
+- **Deadline:** checked on Google's server clock. After it passes, submissions are rejected.
+- **Hidden picks:** until the deadline, the scoreboard shows names only. Brackets are revealed afterwards.
+- Repeated wrong PINs or passcodes are temporarily blocked (15 minutes).
 
-#### Local Mode (fallback, no Apps Script)
+### Admin Overrides
 
-If `APPS_SCRIPT_URL` is not set in `config.js`:
+You own the spreadsheet, so you can edit it directly at any time, including after the deadline.
 
-1. Have them fill out their bracket at `submit.html` and download the `.json` file
-2. Place the downloaded file in the `picks/` folder
-3. Add the filename to `picks/manifest.json`:
-   ```json
-   {
-     "participants": ["brian.json", "sarah.json"]
-   }
-   ```
-4. Commit and push (if using GitHub Pages)
+- **Change the deadline or passcode:** edit the `Config` tab. It takes effect immediately.
+- **Edit or delete a bracket:** edit or delete its row in `Brackets`.
+- **Forgotten PIN:** clear the `PinSalt` and `PinHash` cells on that row. The next submission with the passcode re-claims the name.
+- **Recover an overwritten bracket:** every submission is appended to the `History` tab.
 
 ### Updating Results
 
@@ -57,22 +58,22 @@ After each round of games, edit `results.json` with the winners:
 
 ```json
 {
-  "firstFour": {
-    "FF1": "Texas Southern",
-    "FF2": "SE Missouri St",
-    "FF3": "Nevada",
-    "FF4": "Boise St"
+  "openingRound": {
+    "OR1": "East 16 Seed A",
+    "OR2": "West 16 Seed A",
+    "OR3": "South 16 Seed A",
+    "OR4": "Midwest 16 Seed A"
   },
   "roundOf64": {
-    "East_1": "Duke",
-    "East_2": "Alabama",
+    "East_1": "East 1 Seed",
+    "East_2": "East 8 Seed",
     ...
   },
   "roundOf32": { ... },
   "sweetSixteen": { ... },
   "eliteEight": { ... },
   "finalFour": { ... },
-  "championship": "Duke"
+  "championship": "East 1 Seed"
 }
 ```
 
@@ -84,13 +85,24 @@ After each round of games, edit `results.json` with the winners:
 
 | Round | Slots | Pattern |
 |-------|-------|---------|
-| First Four | 4 games | `FF1`, `FF2`, `FF3`, `FF4` |
+| Opening Round | 12 games | `OR1` through `OR12` |
 | Round of 64 | 32 games | `Region_1` through `Region_8` per region |
 | Round of 32 | 16 games | `Region_1` through `Region_4` per region |
 | Sweet Sixteen | 8 games | `Region_1` and `Region_2` per region |
 | Elite Eight | 4 games | `East`, `West`, `South`, `Midwest` |
 | Final Four | 2 games | `FF_1` (East vs South), `FF_2` (West vs Midwest) |
 | Championship | 1 game | Single string value |
+
+### Opening Round Format (76 teams)
+
+The field is 76 teams, with a 12-game opening round feeding the Round of 64:
+
+- All four **16 seeds** play an opening-round game
+- All four **12 seeds** play an opening-round game
+- Two of the four **11 seeds** play an opening-round game
+- Two of the four **15 seeds** play an opening-round game
+
+Which regions host the 11-seed and 15-seed opening-round games isn't known until closer to Selection Sunday. `tournament.json` currently assigns these as a placeholder (West/Midwest for the 11 seed games, East/South for the 15 seed games) — edit the `openingRound` and `teams` arrays once the actual bracket is released if the regions differ.
 
 ### Seed Matchups (Round of 64)
 
@@ -109,7 +121,7 @@ After each round of games, edit `results.json` with the winners:
 
 | Round | Points per correct pick |
 |-------|------------------------|
-| First Four | 1 |
+| Opening Round | 1 |
 | Round of 64 | 1 |
 | Round of 32 | 2 |
 | Sweet Sixteen | 3 |
@@ -141,10 +153,7 @@ The scoreboard auto-refreshes every 60 seconds, so updating `results.json` and p
 ├── google-apps-script.js   # Code to paste into Google Apps Script
 ├── tournament.json         # Tournament field definition
 ├── results.json            # Game results (manually updated)
-├── README.md
-└── picks/                  # Local fallback picks (used when no Apps Script)
-    ├── manifest.json
-    └── *.json
+└── README.md
 ```
 
 ## Tech Stack

@@ -9,7 +9,7 @@
 
 /**
  * Point values per round.
- *   First Four play-in games:  1 pt each
+ *   Opening Round play-in games: 1 pt each
  *   Round of 64:               1 pt each
  *   Round of 32:               2 pts each
  *   Sweet Sixteen:             3 pts each
@@ -18,7 +18,7 @@
  *   Championship:              6 pts
  */
 const ROUND_POINTS = {
-  firstFour:     1,
+  openingRound:  1,
   roundOf64:     1,
   roundOf32:     2,
   sweetSixteen:  3,
@@ -29,7 +29,7 @@ const ROUND_POINTS = {
 
 /** Ordered list of round keys (earliest → latest). */
 const ROUND_ORDER = [
-  'firstFour',
+  'openingRound',
   'roundOf64',
   'roundOf32',
   'sweetSixteen',
@@ -40,7 +40,7 @@ const ROUND_ORDER = [
 
 /** Human-readable round labels. */
 const ROUND_LABELS = {
-  firstFour:     'First Four',
+  openingRound:  'Opening Round',
   roundOf64:     'Round of 64',
   roundOf32:     'Round of 32',
   sweetSixteen:  'Sweet Sixteen',
@@ -68,18 +68,40 @@ async function loadResults() {
   return fetchJSON('results.json');
 }
 
-/** Load all picks from Google Apps Script. */
-async function loadAllPicks() {
+/**
+ * Load submissions from Google Apps Script.
+ * Returns { deadline, serverTime, open, revealed, brackets }.
+ * Until the deadline passes, each bracket is just { submitter }.
+ */
+async function loadSubmissions() {
   const res = await fetch(APPS_SCRIPT_URL);
   if (!res.ok) throw new Error(`Failed to fetch picks: ${res.status}`);
   const data = await res.json();
-  return Array.isArray(data) ? data.filter(Boolean) : [];
+  if (data.error) throw new Error(data.error);
+  return {
+    deadline: data.deadline ? new Date(data.deadline) : null,
+    serverTime: data.serverTime ? new Date(data.serverTime) : new Date(),
+    open: !!data.open,
+    revealed: !!data.revealed,
+    brackets: Array.isArray(data.brackets) ? data.brackets.filter(Boolean) : [],
+  };
+}
+
+/** POST to Apps Script (plain-text body avoids a CORS preflight). */
+async function postToScript(payload) {
+  const res = await fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  const result = await res.json();
+  if (!result.success) throw new Error(result.error || 'Unknown error');
+  return result;
 }
 
 // ─── BRACKET STRUCTURE HELPERS ───────────────────────────────────────────────
 
 /**
- * Standard NCAA bracket seed matchups for the Round of 64 (after First Four).
+ * Standard NCAA bracket seed matchups for the Round of 64 (after the Opening Round).
  * Each entry is [topSeed, bottomSeed] — seeds that play each other.
  * The matchup index (1-8) is used as the slot suffix: Region_1 through Region_8.
  */
@@ -98,11 +120,12 @@ const SEED_MATCHUPS_64 = [
  * Build all game slot IDs for the entire tournament.
  * Returns an object keyed by round name → array of slot IDs.
  */
-function buildSlotIds(regions) {
+function buildSlotIds(tournament) {
   const slots = {};
+  const regions = tournament.regions;
 
-  // First Four: FF1..FF4
-  slots.firstFour = ['FF1', 'FF2', 'FF3', 'FF4'];
+  // Opening Round: one slot id per game (count varies by year, e.g. 12 for a 76-team field)
+  slots.openingRound = tournament.openingRound.map(g => g.id);
 
   // Round of 64: Region_1..Region_8 for each region (8 games per region = 32 total)
   slots.roundOf64 = [];
@@ -143,9 +166,9 @@ function buildTeamRegionMap(tournament) {
   for (const t of tournament.teams) {
     map[t.name] = t.region;
   }
-  // First Four teams also need mapping
-  for (const ff of tournament.firstFour) {
-    for (const t of ff.teams) {
+  // Opening Round teams also need mapping
+  for (const or of tournament.openingRound) {
+    for (const t of or.teams) {
       map[t.name] = t.region;
     }
   }
@@ -225,25 +248,25 @@ function getEliminatedTeams(results, tournament) {
   const eliminated = new Set();
   const regions = tournament.regions;
 
-  // ── First Four ──
-  for (const ff of tournament.firstFour) {
-    const winner = results.firstFour && results.firstFour[ff.id];
+  // ── Opening Round ──
+  for (const or of tournament.openingRound) {
+    const winner = results.openingRound && results.openingRound[or.id];
     if (winner) {
-      for (const t of ff.teams) {
+      for (const t of or.teams) {
         if (t.name !== winner) eliminated.add(t.name);
       }
     }
   }
 
-  // Helper: get team by seed and region from tournament.teams + firstFour winners
+  // Helper: get team by seed and region from tournament.teams + Opening Round winners
   function getTeamForSeed(region, seed) {
-    // Check if this seed slot is filled by a First Four winner
-    const ffGame = tournament.firstFour.find(ff =>
-      ff.teams[0].seed === seed && ff.teams[0].region === region
+    // Check if this seed slot is filled by an Opening Round winner
+    const orGame = tournament.openingRound.find(or =>
+      or.teams[0].seed === seed && or.teams[0].region === region
     );
-    if (ffGame) {
-      const w = results.firstFour && results.firstFour[ffGame.id];
-      return w || null; // null if First Four not yet played
+    if (orGame) {
+      const w = results.openingRound && results.openingRound[orGame.id];
+      return w || null; // null if Opening Round not yet played
     }
     const t = tournament.teams.find(t => t.region === region && t.seed === seed);
     return t ? t.name : null;
@@ -395,9 +418,9 @@ function calculateScore(picks, results, eliminated) {
  * @param {string[]} regions  – region names
  * @returns {number} remaining possible points
  */
-function calculateRemainingPossible(picks, results, eliminated, regions) {
+function calculateRemainingPossible(picks, results, eliminated, tournament) {
   let remaining = 0;
-  const slots = buildSlotIds(regions);
+  const slots = buildSlotIds(tournament);
 
   for (const round of ROUND_ORDER) {
     const pts = ROUND_POINTS[round];
@@ -441,7 +464,7 @@ function calculateRemainingPossible(picks, results, eliminated, regions) {
 function scorePicks(picks, results, tournament) {
   const eliminated = getEliminatedTeams(results, tournament);
   const current = calculateScore(picks, results, eliminated);
-  const remaining = calculateRemainingPossible(picks, results, eliminated, tournament.regions);
+  const remaining = calculateRemainingPossible(picks, results, eliminated, tournament);
   return {
     name: picks.submitter,
     currentScore: current,
@@ -493,12 +516,12 @@ function buildR64Matchups(region, tournament, results) {
   const matchups = [];
 
   function getTeamForSeed(region, seed) {
-    const ffGame = tournament.firstFour.find(ff =>
-      ff.teams[0].seed === seed && ff.teams[0].region === region
+    const orGame = tournament.openingRound.find(or =>
+      or.teams[0].seed === seed && or.teams[0].region === region
     );
-    if (ffGame) {
-      const w = results.firstFour && results.firstFour[ffGame.id];
-      return { name: w || `Winner of ${ffGame.id}`, seed };
+    if (orGame) {
+      const w = results.openingRound && results.openingRound[orGame.id];
+      return { name: w || `Winner of ${orGame.id}`, seed };
     }
     const t = tournament.teams.find(t => t.region === region && t.seed === seed);
     return t ? { name: t.name, seed: t.seed } : { name: 'TBD', seed };
@@ -527,8 +550,8 @@ function buildR64Matchups(region, tournament, results) {
 function getTeamSeed(teamName, tournament) {
   const t = tournament.teams.find(t => t.name === teamName);
   if (t) return t.seed;
-  for (const ff of tournament.firstFour) {
-    for (const tm of ff.teams) {
+  for (const or of tournament.openingRound) {
+    for (const tm of or.teams) {
       if (tm.name === teamName) return tm.seed;
     }
   }

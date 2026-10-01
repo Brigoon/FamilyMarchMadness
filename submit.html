@@ -21,12 +21,19 @@
     <div id="submit-error" class="error-msg" style="display:none;"></div>
 
     <div id="submit-content" style="display:none;">
+      <div id="deadline-banner" class="info-banner" style="display:none;"></div>
       <div id="bracket-container"></div>
 
       <div class="submit-download-bar">
-        <input type="text" class="name-input" id="submitter-name" placeholder="Your Name" maxlength="50">
+        <input type="text" class="name-input" id="submitter-name" placeholder="Your Name" maxlength="50" autocomplete="off">
+        <input type="password" class="name-input" id="family-passcode" placeholder="Family Passcode" autocomplete="off">
+        <input type="password" class="name-input" id="owner-pin" placeholder="Your PIN (4+ chars)" maxlength="32" autocomplete="off">
+        <button class="btn btn-secondary" id="btn-load" disabled>Load My Bracket</button>
         <button class="btn btn-primary" id="btn-submit" disabled>Submit Bracket</button>
-        <span class="pick-counter" id="pick-counter">0 / 67 picks</span>
+        <span class="pick-counter" id="pick-counter">0 / 0 picks</span>
+      </div>
+      <div class="info-banner" style="margin-top:1rem;">
+        First time? Pick any PIN and remember it. It locks your name so only you can edit your bracket until the deadline.
       </div>
       <div class="success-message" id="success-msg">
         ✅ Bracket submitted successfully! Your picks are now on the scoreboard.
@@ -43,14 +50,21 @@
       const contentEl = document.getElementById('submit-content');
       const containerEl = document.getElementById('bracket-container');
       const nameInput = document.getElementById('submitter-name');
+      const passcodeInput = document.getElementById('family-passcode');
+      const pinInput = document.getElementById('owner-pin');
       const btnSubmit = document.getElementById('btn-submit');
+      const btnLoad = document.getElementById('btn-load');
+      const bannerEl = document.getElementById('deadline-banner');
       const successMsg = document.getElementById('success-msg');
       const pickCounter = document.getElementById('pick-counter');
 
       let tournament = null;
+      let deadline = null;
+      let clockOffsetMs = 0; // server time minus local time
+      let closed = false;
 
       const userPicks = {
-        firstFour: {},
+        openingRound: {},
         roundOf64: {},
         roundOf32: {},
         sweetSixteen: {},
@@ -73,30 +87,66 @@
 
       async function init() {
         try {
-          tournament = await loadTournament();
+          const [t, submissions] = await Promise.all([loadTournament(), loadSubmissions()]);
+          tournament = t;
+          deadline = submissions.deadline;
+          clockOffsetMs = submissions.serverTime.getTime() - Date.now();
           loadingEl.style.display = 'none';
           contentEl.style.display = 'block';
           renderFullBracket();
+          updatePickCounter();
+          updateDeadlineBanner();
+          setInterval(updateDeadlineBanner, 1000);
         } catch (err) {
           showError(`Error loading tournament: ${err.message}`);
         }
       }
 
+      function formatRemaining(ms) {
+        const s = Math.floor(ms / 1000);
+        const d = Math.floor(s / 86400);
+        const h = Math.floor((s % 86400) / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        const sec = s % 60;
+        return `${d ? d + 'd ' : ''}${h}h ${m}m ${sec}s`;
+      }
+
+      /** Display only; the server enforces the deadline. */
+      function updateDeadlineBanner() {
+        bannerEl.style.display = 'block';
+        if (!deadline) {
+          closed = true;
+          bannerEl.className = 'info-banner closed';
+          bannerEl.textContent = 'Submissions are not open yet.';
+        } else {
+          const remaining = deadline.getTime() - (Date.now() + clockOffsetMs);
+          closed = remaining <= 0;
+          if (closed) {
+            bannerEl.className = 'info-banner closed';
+            bannerEl.textContent = 'Submissions are closed.';
+          } else {
+            bannerEl.className = 'info-banner';
+            bannerEl.textContent = `Deadline: ${deadline.toLocaleString()} (${formatRemaining(remaining)} left)`;
+          }
+        }
+        updateSubmitButton();
+      }
+
       function renderFullBracket() {
         containerEl.innerHTML = '';
 
-        // ── First Four row at top ──
-        if (tournament.firstFour.length > 0) {
+        // ── Opening Round row at top ──
+        if (tournament.openingRound.length > 0) {
           const ffRow = document.createElement('div');
           ffRow.className = 'ff-row';
-          ffRow.innerHTML = '<div class="ff-row-label">First Four</div>';
+          ffRow.innerHTML = '<div class="ff-row-label">Opening Round</div>';
           const ffGames = document.createElement('div');
           ffGames.className = 'ff-games';
-          for (const ff of tournament.firstFour) {
+          for (const or of tournament.openingRound) {
             ffGames.appendChild(createPickGameEl(
-              ff.id, 'firstFour',
-              ff.teams[0].name, ff.teams[0].seed,
-              ff.teams[1].name, ff.teams[1].seed
+              or.id, 'openingRound',
+              or.teams[0].name, or.teams[0].seed,
+              or.teams[1].name, or.teams[1].seed
             ));
           }
           ffRow.appendChild(ffGames);
@@ -218,11 +268,11 @@
       }
 
       function getTeamNameForSeed(region, seed) {
-        const ffGame = tournament.firstFour.find(ff =>
-          ff.teams[0].seed === seed && ff.teams[0].region === region
+        const orGame = tournament.openingRound.find(or =>
+          or.teams[0].seed === seed && or.teams[0].region === region
         );
-        if (ffGame) {
-          return userPicks.firstFour[ffGame.id] || `Winner of ${ffGame.id}`;
+        if (orGame) {
+          return userPicks.openingRound[orGame.id] || `Winner of ${orGame.id}`;
         }
         const t = tournament.teams.find(t => t.region === region && t.seed === seed);
         return t ? t.name : 'TBD';
@@ -280,7 +330,7 @@
             currentSeedA = currentTeamA !== 'TBD' ? getTeamSeed(currentTeamA, tournament) : '?';
             currentSeedB = currentTeamB !== 'TBD' ? getTeamSeed(currentTeamB, tournament) : '?';
           } else if (round === 'roundOf64') {
-            // Re-resolve First Four winners
+            // Re-resolve Opening Round winners
             const region = slot.split('_')[0];
             const idx = parseInt(slot.split('_')[1]) - 1;
             const [sA, sB] = SEED_MATCHUPS_64[idx];
@@ -333,12 +383,12 @@
         // that is no longer feeding into that slot. Simplest: just clear
         // downstream slots that are fed by this slot.
 
-        if (changedRound === 'firstFour') {
-          // Affects a specific R64 slot. Find which R64 slot uses this FF winner.
-          const ff = tournament.firstFour.find(f => f.id === changedSlot);
-          if (ff) {
-            const region = ff.teams[0].region;
-            const seed = ff.teams[0].seed;
+        if (changedRound === 'openingRound') {
+          // Affects a specific R64 slot. Find which R64 slot uses this Opening Round winner.
+          const or = tournament.openingRound.find(f => f.id === changedSlot);
+          if (or) {
+            const region = or.teams[0].region;
+            const seed = or.teams[0].seed;
             // Find which R64 matchup includes this seed
             for (let i = 0; i < SEED_MATCHUPS_64.length; i++) {
               if (SEED_MATCHUPS_64[i][0] === seed || SEED_MATCHUPS_64[i][1] === seed) {
@@ -440,12 +490,12 @@
       }
 
       function countTotalSlots() {
-        return 4 + 32 + 16 + 8 + 4 + 2 + 1; // 67
+        return tournament.openingRound.length + 32 + 16 + 8 + 4 + 2 + 1;
       }
 
       function countFilledSlots() {
         let count = 0;
-        count += Object.values(userPicks.firstFour).filter(Boolean).length;
+        count += Object.values(userPicks.openingRound).filter(Boolean).length;
         count += Object.values(userPicks.roundOf64).filter(Boolean).length;
         count += Object.values(userPicks.roundOf32).filter(Boolean).length;
         count += Object.values(userPicks.sweetSixteen).filter(Boolean).length;
@@ -464,11 +514,43 @@
 
       function updateSubmitButton() {
         const name = nameInput.value.trim();
+        const hasCreds = !!(name && passcodeInput.value && pinInput.value);
         const allFilled = countFilledSlots() >= countTotalSlots();
-        btnSubmit.disabled = !(name && allFilled);
+        btnSubmit.disabled = closed || !(hasCreds && allFilled);
+        btnLoad.disabled = !hasCreds;
       }
 
       nameInput.addEventListener('input', updateSubmitButton);
+      passcodeInput.addEventListener('input', updateSubmitButton);
+      pinInput.addEventListener('input', updateSubmitButton);
+
+      btnLoad.addEventListener('click', async () => {
+        const submitErrorMsg = document.getElementById('submit-error-msg');
+        submitErrorMsg.style.display = 'none';
+        btnLoad.disabled = true;
+        try {
+          const result = await postToScript({
+            action: 'load',
+            submitter: nameInput.value.trim(),
+            passcode: passcodeInput.value,
+            pin: pinInput.value,
+          });
+          const p = result.picks || {};
+          userPicks.openingRound = { ...(p.openingRound || {}) };
+          userPicks.roundOf64 = { ...(p.roundOf64 || {}) };
+          userPicks.roundOf32 = { ...(p.roundOf32 || {}) };
+          userPicks.sweetSixteen = { ...(p.sweetSixteen || {}) };
+          userPicks.eliteEight = { ...(p.eliteEight || {}) };
+          userPicks.finalFour = { ...(p.finalFour || {}) };
+          userPicks.championship = p.championship || null;
+          refreshAllGames();
+          updatePickCounter();
+        } catch (err) {
+          submitErrorMsg.textContent = `Could not load bracket: ${err.message}`;
+          submitErrorMsg.style.display = 'block';
+        }
+        updateSubmitButton();
+      });
 
       btnSubmit.addEventListener('click', async () => {
         const name = nameInput.value.trim();
@@ -476,10 +558,13 @@
 
         const submitErrorMsg = document.getElementById('submit-error-msg');
         submitErrorMsg.style.display = 'none';
+        successMsg.style.display = 'none';
 
         const picksData = {
           submitter: name,
-          firstFour: { ...userPicks.firstFour },
+          passcode: passcodeInput.value,
+          pin: pinInput.value,
+          openingRound: { ...userPicks.openingRound },
           roundOf64: { ...userPicks.roundOf64 },
           roundOf32: { ...userPicks.roundOf32 },
           sweetSixteen: { ...userPicks.sweetSixteen },
@@ -488,27 +573,22 @@
           championship: userPicks.championship,
         };
 
-        // Submit to Google Apps Script
         btnSubmit.disabled = true;
         btnSubmit.textContent = 'Submitting\u2026';
 
         try {
-          const res = await fetch(APPS_SCRIPT_URL, {
-            method: 'POST',
-            body: JSON.stringify(picksData),
-          });
-          const result = await res.json();
-          if (result.success) {
-            successMsg.style.display = 'block';
-            btnSubmit.textContent = 'Submitted \u2705';
-          } else {
-            throw new Error(result.error || 'Unknown error');
-          }
+          await postToScript(picksData);
+          successMsg.style.display = 'block';
+          btnSubmit.textContent = 'Submitted \u2705';
+          setTimeout(() => {
+            btnSubmit.textContent = 'Submit Bracket';
+            updateSubmitButton();
+          }, 3000);
         } catch (err) {
-          submitErrorMsg.textContent = `Failed to submit: ${err.message}. Please try again.`;
+          submitErrorMsg.textContent = `Failed to submit: ${err.message}`;
           submitErrorMsg.style.display = 'block';
-          btnSubmit.disabled = false;
           btnSubmit.textContent = 'Submit Bracket';
+          updateSubmitButton();
         }
       });
 

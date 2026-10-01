@@ -77,14 +77,21 @@
 
       async function loadBracket() {
         try {
-          const [tournament, results, allPicks] = await Promise.all([
+          const [tournament, results, submissions] = await Promise.all([
             loadTournament(),
             loadResults(),
-            loadAllPicks(),
+            loadSubmissions(),
           ]);
 
+          if (!submissions.revealed) {
+            showError(submissions.deadline
+              ? `Brackets are hidden until the deadline: ${submissions.deadline.toLocaleString()}.`
+              : 'Brackets are hidden until the deadline is set.');
+            return;
+          }
+
           let picks = null;
-          for (const p of allPicks) {
+          for (const p of submissions.brackets) {
             const normalized = p.submitter.toLowerCase().replace(/\s+/g, '-');
             if (normalized === nameParam) {
               picks = p;
@@ -117,19 +124,19 @@
       function renderFullBracket(tournament, results, picks, eliminated) {
         containerEl.innerHTML = '';
 
-        // ── First Four row at top ──
-        if (tournament.firstFour.length > 0) {
+        // ── Opening Round row at top ──
+        if (tournament.openingRound.length > 0) {
           const ffRow = document.createElement('div');
           ffRow.className = 'ff-row';
-          ffRow.innerHTML = '<div class="ff-row-label">First Four</div>';
+          ffRow.innerHTML = '<div class="ff-row-label">Opening Round</div>';
           const ffGames = document.createElement('div');
           ffGames.className = 'ff-games';
-          for (const ff of tournament.firstFour) {
-            const pickVal = picks.firstFour && picks.firstFour[ff.id];
-            const status = getPickStatus('firstFour', ff.id, pickVal, results, eliminated);
+          for (const or of tournament.openingRound) {
+            const pickVal = picks.openingRound && picks.openingRound[or.id];
+            const status = getPickStatus('openingRound', or.id, pickVal, results, eliminated);
             ffGames.appendChild(createGameEl(
-              ff.teams[0].name, ff.teams[0].seed,
-              ff.teams[1].name, ff.teams[1].seed,
+              or.teams[0].name, or.teams[0].seed,
+              or.teams[1].name, or.teams[1].seed,
               pickVal, status
             ));
           }

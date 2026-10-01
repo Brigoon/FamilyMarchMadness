@@ -19,6 +19,7 @@
   <main class="container container-narrow">
     <div id="scoreboard-loading" class="loading">Loading scoreboard…</div>
     <div id="scoreboard-error" class="error-msg" style="display:none;"></div>
+    <div id="reveal-banner" class="info-banner" style="display:none;"></div>
 
     <table class="scoreboard-table" id="scoreboard-table" style="display:none;">
       <thead>
@@ -43,18 +44,29 @@
       const tableEl = document.getElementById('scoreboard-table');
       const tbodyEl = document.getElementById('scoreboard-body');
       const updatedEl = document.getElementById('last-updated');
+      const bannerEl = document.getElementById('reveal-banner');
 
       async function refreshScoreboard() {
         try {
-          const [tournament, results, allPicks] = await Promise.all([
+          const [tournament, results, submissions] = await Promise.all([
             loadTournament(),
             loadResults(),
-            loadAllPicks(),
+            loadSubmissions(),
           ]);
+          const allPicks = submissions.brackets;
+
+          if (submissions.revealed) {
+            bannerEl.style.display = 'none';
+          } else {
+            bannerEl.textContent = submissions.deadline
+              ? `Brackets are hidden until the deadline: ${submissions.deadline.toLocaleString()}.`
+              : 'Brackets are hidden until the deadline is set.';
+            bannerEl.style.display = 'block';
+          }
 
           if (allPicks.length === 0) {
             loadingEl.style.display = 'none';
-            errorEl.textContent = 'No picks found. Add participant files to the picks/ folder.';
+            errorEl.textContent = 'No brackets have been submitted yet.';
             errorEl.style.display = 'block';
             tableEl.style.display = 'none';
             return;

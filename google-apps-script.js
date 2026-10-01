@@ -1,126 +1,428 @@
 /**
- * Google Apps Script — March Madness Bracket Storage
+ * Google Apps Script — March Madness Bracket Storage (guarded)
  *
  * SETUP INSTRUCTIONS:
  * 1. Go to https://script.google.com and create a new project
  * 2. Replace the contents of Code.gs with this entire file
- * 3. Click Deploy → New deployment
- * 4. Choose "Web app" as the type
- * 5. Set "Execute as" to your Google account
- * 6. Set "Who has access" to "Anyone"
- * 7. Click Deploy and copy the web app URL
- * 8. Paste the URL into config.js in your bracket site
+ * 3. Run the `setup` function once and authorize it. It creates the spreadsheet
+ *    with three tabs: Brackets, Config and History.
+ * 4. Open the spreadsheet (URL is logged by `setup`) and fill in the Config tab:
+ *      Deadline         e.g. 2027-03-18T12:15:00-04:00   (ISO text with UTC offset)
+ *      Family Passcode  any phrase you share with the family
+ * 5. Click Deploy → New deployment → Web app
+ *      Execute as: Me      Who has access: Anyone
+ * 6. Paste the web app URL into config.js in your bracket site
  *
- * This script stores bracket submissions in a Google Sheet.
- * Each submission is stored as a row: [timestamp, submitter name, JSON data].
- * Updating a bracket (same name) overwrites the previous entry.
+ * UPDATING AN EXISTING DEPLOYMENT: Deploy → Manage deployments → Edit (pencil)
+ * → Version: New version → Deploy. The URL stays the same.
+ *
+ * RULES ENFORCED HERE (the browser cannot bypass them):
+ *  - A submission needs the family passcode.
+ *  - The first submission under a name claims it with a PIN; later edits need that PIN.
+ *  - Submissions are rejected once the Deadline (server clock) has passed.
+ *  - Other people's picks are hidden from GET until the Deadline has passed.
+ *
+ * MANUAL OVERRIDES: you own the spreadsheet, so edit it directly at any time.
+ * To reset a forgotten PIN, clear the PinSalt and PinHash cells on that row;
+ * the next submission with the passcode re-claims the name.
  */
 
-/** Name of the sheet tab to use */
-const SHEET_NAME = 'Brackets';
+const BRACKETS_SHEET = 'Brackets';
+const CONFIG_SHEET = 'Config';
+const HISTORY_SHEET = 'History';
 
-/**
- * Get or create the spreadsheet and sheet.
- * On first run, creates a new spreadsheet and logs its URL.
- */
-function getSheet() {
+const BRACKET_HEADERS = ['Timestamp', 'Submitter', 'Picks JSON', 'PinSalt', 'PinHash'];
+const HISTORY_HEADERS = ['Timestamp', 'Submitter', 'Action', 'Picks JSON'];
+
+const MAX_PAYLOAD_CHARS = 20000;
+const MAX_NAME_CHARS = 50;
+const MAX_TEAM_CHARS = 60;
+const PIN_MIN = 4;
+const PIN_MAX = 32;
+const MAX_FAILURES = 10;
+const MAX_GLOBAL_FAILURES = 30;
+const FAILURE_WINDOW_SECONDS = 900;
+
+/** Expected pick counts and slot-id patterns per round. */
+const ROUND_RULES = {
+  roundOf64:    { count: 32, key: /^[A-Za-z]{2,20}_[1-8]$/ },
+  roundOf32:    { count: 16, key: /^[A-Za-z]{2,20}_[1-4]$/ },
+  sweetSixteen: { count: 8,  key: /^[A-Za-z]{2,20}_[1-2]$/ },
+  eliteEight:   { count: 4,  key: /^[A-Za-z]{2,20}$/ },
+  finalFour:    { count: 2,  key: /^FF_[1-2]$/ },
+};
+const OPENING_ROUND_KEY = /^OR\d{1,2}$/;
+const OPENING_ROUND_MAX = 16;
+
+// ─── SHEET ACCESS ────────────────────────────────────────────────────────────
+
+function getSpreadsheet() {
   const props = PropertiesService.getScriptProperties();
   let ssId = props.getProperty('SPREADSHEET_ID');
-
   if (!ssId) {
     const ss = SpreadsheetApp.create('March Madness Brackets');
-    ssId = ss.getId();
-    props.setProperty('SPREADSHEET_ID', ssId);
+    props.setProperty('SPREADSHEET_ID', ss.getId());
     Logger.log('Created spreadsheet: ' + ss.getUrl());
-
-    const sheet = ss.getActiveSheet();
-    sheet.setName(SHEET_NAME);
-    sheet.appendRow(['Timestamp', 'Submitter', 'Picks JSON']);
-    sheet.setFrozenRows(1);
+    return ss;
   }
+  return SpreadsheetApp.openById(ssId);
+}
 
-  const ss = SpreadsheetApp.openById(ssId);
-  let sheet = ss.getSheetByName(SHEET_NAME);
+/** Get a tab by name, creating it with a header row if missing. */
+function getTab(ss, name, headers) {
+  let sheet = ss.getSheetByName(name);
   if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME);
-    sheet.appendRow(['Timestamp', 'Submitter', 'Picks JSON']);
-    sheet.setFrozenRows(1);
+    // A brand-new spreadsheet has an empty default tab; reuse it for the first tab we need.
+    const sheets = ss.getSheets();
+    if (sheets.length === 1 && sheets[0].getLastRow() === 0 && sheets[0].getName() !== name) {
+      sheet = sheets[0];
+      sheet.setName(name);
+    } else {
+      sheet = ss.insertSheet(name);
+    }
   }
-
+  if (headers) {
+    const range = sheet.getRange(1, 1, 1, headers.length);
+    if (range.getValues()[0].join('|') !== headers.join('|')) {
+      range.setValues([headers]);
+      sheet.setFrozenRows(1);
+    }
+  }
   return sheet;
 }
 
+function getBracketsSheet() {
+  return getTab(getSpreadsheet(), BRACKETS_SHEET, BRACKET_HEADERS);
+}
+
+function getHistorySheet() {
+  return getTab(getSpreadsheet(), HISTORY_SHEET, HISTORY_HEADERS);
+}
+
+function getConfigSheet() {
+  const ss = getSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG_SHEET);
+  if (!sheet) {
+    sheet = getTab(ss, CONFIG_SHEET, ['Setting', 'Value', 'Notes']);
+    sheet.getRange(2, 1, 2, 3).setValues([
+      ['Deadline', '', 'ISO time with UTC offset, e.g. 2027-03-18T12:15:00-04:00'],
+      ['Family Passcode', '', 'Shared with the family; required to submit'],
+    ]);
+    sheet.getRange(2, 2, 2, 1).setNumberFormat('@');
+  }
+  return sheet;
+}
+
+/** Run once from the editor to create all tabs. */
+function setup() {
+  const brackets = getBracketsSheet();
+  // Keep salt/hash as literal text so Sheets never reinterprets them as numbers.
+  brackets.getRange(1, 4, brackets.getMaxRows(), 2).setNumberFormat('@');
+  getHistorySheet();
+  getConfigSheet();
+  Logger.log('Ready: ' + getSpreadsheet().getUrl());
+}
+
+/** Read the Config tab into { deadline, passcode }. */
+function readConfig() {
+  const rows = getConfigSheet().getDataRange().getValues();
+  const map = {};
+  for (let i = 1; i < rows.length; i++) {
+    map[String(rows[i][0]).trim().toLowerCase()] = rows[i][1];
+  }
+  return {
+    deadline: parseDeadline(map['deadline']),
+    passcode: String(map['family passcode'] == null ? '' : map['family passcode']),
+  };
+}
+
+/** Accepts a Date cell or ISO text; returns a Date or null. */
+function parseDeadline(value) {
+  if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
+  const text = String(value == null ? '' : value).trim();
+  if (!text) return null;
+  const d = new Date(text);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// ─── SECURITY HELPERS ────────────────────────────────────────────────────────
+
+function hashPin(salt, pin) {
+  const bytes = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256, salt + ':' + pin, Utilities.Charset.UTF_8);
+  return bytes.map(b => ('0' + (b & 0xff).toString(16)).slice(-2)).join('');
+}
+
+function safeEqual(a, b) {
+  a = String(a); b = String(b);
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+function failureKey(scope) {
+  return 'fail:' + String(scope).toLowerCase();
+}
+
+function failureCount(scope) {
+  return Number(CacheService.getScriptCache().get(failureKey(scope)) || 0);
+}
+
+function recordFailure(scope) {
+  CacheService.getScriptCache().put(
+    failureKey(scope), String(failureCount(scope) + 1), FAILURE_WINDOW_SECONDS);
+}
+
+function clearFailures(scope) {
+  CacheService.getScriptCache().remove(failureKey(scope));
+}
+
+class RequestError extends Error {}
+
+function normalizeName(raw) {
+  return String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim();
+}
+
+/** Names are written into cells, so reject anything Sheets could treat as a formula. */
+function validateName(name) {
+  if (!name) throw new RequestError('Missing submitter name');
+  if (name.length > MAX_NAME_CHARS) throw new RequestError('Name is too long');
+  if (/^[=+\-@]/.test(name) || /[\u0000-\u001f]/.test(name)) {
+    throw new RequestError('Name contains characters that are not allowed');
+  }
+}
+
+function validatePin(pin) {
+  if (pin.length < PIN_MIN || pin.length > PIN_MAX) {
+    throw new RequestError(`PIN must be ${PIN_MIN}-${PIN_MAX} characters`);
+  }
+}
+
+function cleanTeam(value) {
+  if (typeof value !== 'string' || !value || value.length > MAX_TEAM_CHARS || /[\u0000-\u001f]/.test(value)) {
+    throw new RequestError('Invalid team name in picks');
+  }
+  return value;
+}
+
+/** Returns a sanitized copy of the picks; throws RequestError if malformed. */
+function validatePicks(data, name) {
+  const clean = { submitter: name };
+
+  const opening = data.openingRound;
+  if (!opening || typeof opening !== 'object' || Array.isArray(opening)) {
+    throw new RequestError('Invalid opening round picks');
+  }
+  const openingKeys = Object.keys(opening);
+  if (openingKeys.length < 1 || openingKeys.length > OPENING_ROUND_MAX) {
+    throw new RequestError('Invalid number of opening round picks');
+  }
+  clean.openingRound = {};
+  for (const k of openingKeys) {
+    if (!OPENING_ROUND_KEY.test(k)) throw new RequestError('Invalid opening round slot');
+    clean.openingRound[k] = cleanTeam(opening[k]);
+  }
+
+  for (const round of Object.keys(ROUND_RULES)) {
+    const rule = ROUND_RULES[round];
+    const src = data[round];
+    if (!src || typeof src !== 'object' || Array.isArray(src)) {
+      throw new RequestError(`Invalid ${round} picks`);
+    }
+    const keys = Object.keys(src);
+    if (keys.length !== rule.count) throw new RequestError(`Incomplete ${round} picks`);
+    clean[round] = {};
+    for (const k of keys) {
+      if (!rule.key.test(k)) throw new RequestError(`Invalid ${round} slot`);
+      clean[round][k] = cleanTeam(src[k]);
+    }
+  }
+
+  clean.championship = cleanTeam(data.championship);
+  return clean;
+}
+
+// ─── REQUEST HANDLERS ────────────────────────────────────────────────────────
+
 /**
- * Handle POST requests — save or update a bracket submission.
+ * POST body (JSON):
+ *   submit: { submitter, passcode, pin, openingRound, roundOf64, ... championship }
+ *   load:   { action: 'load', submitter, passcode, pin }
  */
 function doPost(e) {
+  let lock = null;
   try {
-    const data = JSON.parse(e.postData.contents);
-    const name = (data.submitter || '').trim();
+    const raw = e && e.postData ? e.postData.contents : '';
+    if (!raw || raw.length > MAX_PAYLOAD_CHARS) throw new RequestError('Invalid request');
 
-    if (!name) {
-      return jsonResponse({ success: false, error: 'Missing submitter name' });
+    let data;
+    try { data = JSON.parse(raw); } catch (_) { throw new RequestError('Invalid request'); }
+    if (!data || typeof data !== 'object') throw new RequestError('Invalid request');
+
+    const name = normalizeName(data.submitter);
+    validateName(name);
+    const pin = String(data.pin == null ? '' : data.pin);
+    const isLoad = data.action === 'load';
+
+    lock = LockService.getScriptLock();
+    if (!lock.tryLock(15000)) throw new RequestError('Server is busy, please try again');
+
+    if (failureCount(name) >= MAX_FAILURES || failureCount('*passcode') >= MAX_GLOBAL_FAILURES) {
+      throw new RequestError('Too many failed attempts. Try again in 15 minutes.');
     }
 
-    const sheet = getSheet();
-    const rows = sheet.getDataRange().getValues();
+    const config = readConfig();
+    if (!config.passcode) throw new RequestError('Submissions are not configured yet');
+    if (!safeEqual(String(data.passcode == null ? '' : data.passcode), config.passcode)) {
+      recordFailure('*passcode');
+      throw new RequestError('Incorrect family passcode');
+    }
 
-    // Check if this submitter already has an entry (case-insensitive match)
+    const sheet = getBracketsSheet();
+    const rows = sheet.getDataRange().getValues();
     let existingRow = -1;
     for (let i = 1; i < rows.length; i++) {
-      if (rows[i][1].toLowerCase() === name.toLowerCase()) {
-        existingRow = i + 1; // Sheet rows are 1-indexed
+      if (String(rows[i][1]).toLowerCase() === name.toLowerCase()) {
+        existingRow = i + 1; // sheet rows are 1-indexed
         break;
       }
     }
+    const existing = existingRow > 0 ? rows[existingRow - 1] : null;
+    const storedSalt = existing ? String(existing[3] || '') : '';
+    const storedHash = existing ? String(existing[4] || '') : '';
+    const claimed = !!(storedSalt && storedHash);
 
-    const jsonStr = JSON.stringify(data);
-    const timestamp = new Date().toISOString();
-
-    if (existingRow > 0) {
-      // Update existing entry
-      sheet.getRange(existingRow, 1, 1, 3).setValues([[timestamp, name, jsonStr]]);
-    } else {
-      // Append new entry
-      sheet.appendRow([timestamp, name, jsonStr]);
+    if (isLoad) {
+      if (!existing) throw new RequestError('No bracket found for that name');
+      verifyPin(name, claimed, storedSalt, storedHash, pin);
+      return jsonResponse({ success: true, picks: JSON.parse(existing[2]) });
     }
 
-    return jsonResponse({ success: true, message: `Bracket saved for ${name}` });
+    if (!config.deadline) throw new RequestError('Submissions are not configured yet');
+    if (new Date() >= config.deadline) throw new RequestError('Submissions are closed');
+
+    const picks = validatePicks(data, name);
+
+    let salt = storedSalt;
+    let hash = storedHash;
+    if (claimed) {
+      verifyPin(name, claimed, storedSalt, storedHash, pin);
+    } else {
+      validatePin(pin);
+      salt = Utilities.getUuid();
+      hash = hashPin(salt, pin);
+    }
+
+    const timestamp = new Date().toISOString();
+    const jsonStr = JSON.stringify(picks);
+    // Keep the original capitalization of an existing entry.
+    const storedName = existing ? String(existing[1]) : name;
+    const rowValues = [timestamp, storedName, jsonStr, salt, hash];
+
+    if (existing) {
+      sheet.getRange(existingRow, 1, 1, rowValues.length).setValues([rowValues]);
+    } else {
+      sheet.appendRow(rowValues);
+    }
+    getHistorySheet().appendRow([timestamp, storedName, existing ? 'update' : 'create', jsonStr]);
+    clearFailures(name);
+
+    return jsonResponse({ success: true, message: `Bracket saved for ${storedName}` });
   } catch (err) {
-    return jsonResponse({ success: false, error: err.message });
+    if (err instanceof RequestError) return jsonResponse({ success: false, error: err.message });
+    console.error(err);
+    return jsonResponse({ success: false, error: 'Unexpected server error' });
+  } finally {
+    if (lock) lock.releaseLock();
+  }
+}
+
+function verifyPin(name, claimed, salt, hash, pin) {
+  if (!claimed) throw new RequestError('That name has no PIN yet. Submit a bracket to set one.');
+  if (!safeEqual(hashPin(salt, pin), hash)) {
+    recordFailure(name);
+    throw new RequestError('Incorrect PIN for that name');
   }
 }
 
 /**
- * Handle GET requests — return all brackets as JSON.
+ * GET — returns { deadline, serverTime, open, revealed, brackets }.
+ * Until the deadline passes, brackets contain only { submitter }.
+ * PINs, salts and the passcode are never returned.
  */
 function doGet(e) {
   try {
-    const sheet = getSheet();
-    const rows = sheet.getDataRange().getValues();
-    const brackets = [];
+    const config = readConfig();
+    const now = new Date();
+    const revealed = !!config.deadline && now >= config.deadline;
+    const open = !!config.deadline && !revealed;
 
-    // Skip header row
+    const rows = getBracketsSheet().getDataRange().getValues();
+    const brackets = [];
     for (let i = 1; i < rows.length; i++) {
+      if (!rows[i][1]) continue;
+      if (!revealed) {
+        brackets.push({ submitter: String(rows[i][1]) });
+        continue;
+      }
       try {
-        const picks = JSON.parse(rows[i][2]);
-        brackets.push(picks);
+        brackets.push(JSON.parse(rows[i][2]));
       } catch (parseErr) {
         // Skip malformed rows
       }
     }
 
-    return jsonResponse(brackets);
+    return jsonResponse({
+      deadline: config.deadline ? config.deadline.toISOString() : null,
+      serverTime: now.toISOString(),
+      open,
+      revealed,
+      brackets,
+    });
   } catch (err) {
-    return jsonResponse({ error: err.message });
+    console.error(err);
+    return jsonResponse({ error: 'Unexpected server error' });
   }
 }
 
-/**
- * Return a JSON response with CORS headers.
- */
 function jsonResponse(data) {
   return ContentService
     .createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ─── SELF TEST (run from the editor; does not touch the spreadsheet) ─────────
+
+function selfTest() {
+  const check = (label, ok) => Logger.log((ok ? 'PASS ' : 'FAIL ') + label);
+  const throws = fn => { try { fn(); return false; } catch (e) { return e instanceof RequestError; } };
+
+  check('ISO deadline parses', parseDeadline('2027-03-18T12:15:00-04:00') instanceof Date);
+  check('blank deadline is null', parseDeadline('') === null);
+  check('garbage deadline is null', parseDeadline('soon') === null);
+  check('hash is deterministic', hashPin('s', '1234') === hashPin('s', '1234'));
+  check('hash depends on pin', hashPin('s', '1234') !== hashPin('s', '1235'));
+  check('formula name rejected', throws(() => validateName('=HYPERLINK("x")')));
+  check('long name rejected', throws(() => validateName('a'.repeat(51))));
+  check('short pin rejected', throws(() => validatePin('12')));
+
+  const regions = ['East', 'West', 'South', 'Midwest'];
+  const fill = (n, make) => { const o = {}; for (let i = 1; i <= n; i++) o[make(i)] = 'Team'; return o; };
+  const good = {
+    openingRound: { OR1: 'A' },
+    roundOf64: {}, roundOf32: {}, sweetSixteen: {}, eliteEight: {},
+    finalFour: { FF_1: 'A', FF_2: 'B' },
+    championship: 'A',
+  };
+  regions.forEach(r => {
+    Object.assign(good.roundOf64, fill(8, i => `${r}_${i}`));
+    Object.assign(good.roundOf32, fill(4, i => `${r}_${i}`));
+    Object.assign(good.sweetSixteen, fill(2, i => `${r}_${i}`));
+    good.eliteEight[r] = 'Team';
+  });
+  check('valid picks accepted', !throws(() => validatePicks(good, 'Test')));
+  const bad = JSON.parse(JSON.stringify(good));
+  delete bad.roundOf64.East_1;
+  check('incomplete picks rejected', throws(() => validatePicks(bad, 'Test')));
 }

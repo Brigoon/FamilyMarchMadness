@@ -2,10 +2,7 @@
  * config.js — Configuration for March Madness Bracket
  *
  * Set APPS_SCRIPT_URL to your deployed Google Apps Script web app URL.
- * This enables cloud-based bracket submission and loading.
- *
- * If left empty, the site falls back to loading picks from local
- * picks/*.json files via manifest.json (original behavior).
+ * It handles guarded bracket submission (passcode, PIN, deadline) and loading.
  */
 
 // Paste your Google Apps Script web app URL here:
