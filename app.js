@@ -68,6 +68,11 @@ async function loadResults() {
   return fetchJSON('results.json');
 }
 
+/** Load hall-of-fame.json */
+async function loadHallOfFame() {
+  return fetchJSON('hall-of-fame.json');
+}
+
 /**
  * Load submissions from Google Apps Script.
  * Returns { deadline, serverTime, open, revealed, brackets }.
@@ -469,6 +474,27 @@ function scorePicks(picks, results, tournament) {
     name: picks.submitter,
     currentScore: current,
     maxPossible: current + remaining,
+  };
+}
+
+/**
+ * Build a Hall of Fame season entry from scored participants.
+ * Ties share a rank (1, 1, 3). Only name and score are kept.
+ *
+ * @param {Array<{name, currentScore}>} scores
+ * @returns {{ year, champion, leaderboard: Array<{rank, name, score}> }}
+ */
+function buildSeasonSnapshot(scores, results, year) {
+  const sorted = [...scores].sort((a, b) =>
+    b.currentScore - a.currentScore || a.name.localeCompare(b.name));
+  return {
+    year,
+    champion: results.championship || null,
+    leaderboard: sorted.map(s => ({
+      rank: 1 + sorted.filter(o => o.currentScore > s.currentScore).length,
+      name: s.name,
+      score: s.currentScore,
+    })),
   };
 }
 

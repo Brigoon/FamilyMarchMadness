@@ -13,6 +13,7 @@
     <nav class="site-nav">
       <a href="index.html" class="active">Scoreboard</a>
       <a href="submit.html">Submit Bracket</a>
+      <a href="hall-of-fame.html">Hall of Fame</a>
     </nav>
   </header>
 
@@ -34,6 +35,14 @@
     </table>
 
     <div id="last-updated" class="last-updated" style="display:none;"></div>
+
+    <div id="hof-export" class="export-panel" style="display:none;">
+      <h3>Archive this season</h3>
+      <p>Copy this entry into the <code>seasons</code> array in <code>hall-of-fame.json</code> and commit.</p>
+      <label>Year <input type="number" id="hof-year" class="name-input" style="width:100px;"></label>
+      <textarea id="hof-json" class="export-text" readonly rows="10"></textarea>
+      <button class="btn btn-secondary" id="hof-copy">Copy</button>
+    </div>
   </main>
 
   <script src="app.js"></script>
@@ -105,6 +114,7 @@
           tableEl.style.display = 'table';
           updatedEl.style.display = 'block';
           updatedEl.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+          setupExport(scores, results, submissions);
         } catch (err) {
           loadingEl.style.display = 'none';
           errorEl.textContent = `Error loading data: ${err.message}`;
@@ -116,6 +126,36 @@
         const div = document.createElement('div');
         div.textContent = str;
         return div.innerHTML;
+      }
+
+      const exportEl = document.getElementById('hof-export');
+      const yearEl = document.getElementById('hof-year');
+      const jsonEl = document.getElementById('hof-json');
+      let exportState = null;
+
+      function renderExport() {
+        const year = parseInt(yearEl.value, 10);
+        const season = buildSeasonSnapshot(exportState.scores, exportState.results, year);
+        jsonEl.value = JSON.stringify(season, null, 2);
+      }
+
+      /** Offer the Hall of Fame export once the tournament is over. */
+      function setupExport(scores, results, submissions) {
+        if (!results.championship || !submissions.revealed) {
+          exportEl.style.display = 'none';
+          return;
+        }
+        const firstTime = !exportState;
+        exportState = { scores, results };
+        if (firstTime) {
+          yearEl.value = (submissions.deadline || new Date()).getFullYear();
+          yearEl.addEventListener('input', renderExport);
+          document.getElementById('hof-copy').addEventListener('click', () => {
+            navigator.clipboard.writeText(jsonEl.value);
+          });
+        }
+        renderExport();
+        exportEl.style.display = 'block';
       }
 
       // Initial load

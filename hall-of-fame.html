@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>March Madness Bracket — Hall of Fame</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <h1><span class="emoji">🏀</span> March Madness Bracket</h1>
+    <nav class="site-nav">
+      <a href="index.html">Scoreboard</a>
+      <a href="submit.html">Submit Bracket</a>
+      <a href="hall-of-fame.html" class="active">Hall of Fame</a>
+    </nav>
+  </header>
+
+  <main class="container container-narrow">
+    <div id="hof-loading" class="loading">Loading Hall of Fame…</div>
+    <div id="hof-error" class="error-msg" style="display:none;"></div>
+    <div id="hof-seasons"></div>
+  </main>
+
+  <script src="app.js"></script>
+  <script>
+    (function () {
+      const loadingEl = document.getElementById('hof-loading');
+      const errorEl = document.getElementById('hof-error');
+      const seasonsEl = document.getElementById('hof-seasons');
+
+      function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+      }
+
+      function renderSeason(season) {
+        const card = document.createElement('section');
+        card.className = 'hof-season';
+
+        const champion = season.champion
+          ? `<span class="hof-champion">Champion: ${escapeHtml(season.champion)}</span>`
+          : '';
+        const rows = (season.leaderboard || []).map(e => `
+          <tr class="${e.rank === 1 ? 'hof-winner' : ''}">
+            <td class="rank">${e.rank === 1 ? '🏆' : escapeHtml(String(e.rank))}</td>
+            <td class="name">${escapeHtml(e.name)}</td>
+            <td class="score">${escapeHtml(String(e.score))}</td>
+          </tr>
+        `).join('');
+
+        card.innerHTML = `
+          <div class="hof-season-header">
+            <h2>${escapeHtml(String(season.year))}</h2>
+            ${champion}
+          </div>
+          <table class="scoreboard-table hof-table">
+            <thead><tr><th class="rank">#</th><th>Name</th><th>Score</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        `;
+        return card;
+      }
+
+      async function init() {
+        try {
+          const data = await loadHallOfFame();
+          const seasons = [...(data.seasons || [])].sort((a, b) => b.year - a.year);
+          loadingEl.style.display = 'none';
+          if (seasons.length === 0) {
+            errorEl.textContent = 'No seasons archived yet.';
+            errorEl.style.display = 'block';
+            return;
+          }
+          for (const s of seasons) seasonsEl.appendChild(renderSeason(s));
+        } catch (err) {
+          loadingEl.style.display = 'none';
+          errorEl.textContent = `Error loading Hall of Fame: ${err.message}`;
+          errorEl.style.display = 'block';
+        }
+      }
+
+      init();
+    })();
+  </script>
+</body>
+</html>

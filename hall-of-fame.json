@@ -1,0 +1,17 @@
+{
+  "seasons": [
+    {
+      "year": 2026,
+      "champion": "Michigan",
+      "leaderboard": [
+        { "rank": 1, "name": "Brian", "score": 80 },
+        { "rank": 2, "name": "John", "score": 78 },
+        { "rank": 3, "name": "Steve", "score": 72 },
+        { "rank": 4, "name": "Grandpa", "score": 71 },
+        { "rank": 5, "name": "Diane", "score": 68 },
+        { "rank": 6, "name": "Scott", "score": 63 },
+        { "rank": 7, "name": "Alex", "score": 54 }
+      ]
+    }
+  ]
+}

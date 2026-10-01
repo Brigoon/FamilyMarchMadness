@@ -180,6 +180,69 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
   font-weight: 600;
 }
 
+/* ─── Hall of Fame ─────────────────────────────────────────────────────── */
+
+.hof-season {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1rem 1.5rem 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.hof-season-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.hof-season-header h2 {
+  color: var(--accent);
+}
+
+.hof-champion {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.hof-table tbody tr {
+  cursor: default;
+}
+
+.hof-table tbody tr.hof-winner {
+  background: var(--green-bg);
+  font-weight: 700;
+}
+
+.export-panel {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1rem 1.5rem;
+  margin-top: 1.5rem;
+}
+
+.export-panel p {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 0.25rem 0 0.75rem;
+}
+
+.export-text {
+  display: block;
+  width: 100%;
+  margin: 0.75rem 0;
+  padding: 0.6rem 0.8rem;
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
 /* ─── Bracket Header & Score ───────────────────────────────────────────── */
 
 .bracket-header {

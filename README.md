@@ -131,6 +131,23 @@ Which regions host the 11-seed and 15-seed opening-round games isn't known until
 
 **Max Possible Score** = Current Score + remaining points from games where the picked team is still alive.
 
+## Hall of Fame
+
+`hall-of-fame.html` lists the final leaderboard (rank, name, score) and the tournament champion for each archived season. Only these are stored, not the brackets. Tied scores share a rank, and everyone at rank 1 is highlighted as a winner.
+
+### End of Season Checklist
+
+1. Once `results.json` has the `championship`, open `index.html`. An **Archive this season** panel appears below the scoreboard.
+2. Check the year, then click **Copy**.
+3. Paste the entry into the `seasons` array in `hall-of-fame.json` (replace the entry if that year already exists) and commit.
+4. Reset for next season:
+   - update `tournament.json` with the new field
+   - reset `results.json` to empty (`{ "openingRound": {}, "roundOf64": {}, ..., "championship": null }`)
+   - set a new `Deadline` in the `Config` tab of the spreadsheet
+   - delete the old rows in the `Brackets` and `History` tabs (only after archiving)
+
+No redeploy of the Apps Script is needed.
+
 ## Deploying to GitHub Pages
 
 1. Push all files to a GitHub repository
@@ -147,12 +164,14 @@ The scoreboard auto-refreshes every 60 seconds, so updating `results.json` and p
 ├── index.html              # Scoreboard
 ├── bracket.html            # Individual bracket view
 ├── submit.html             # Bracket submission form
+├── hall-of-fame.html       # Past seasons' final leaderboards
 ├── styles.css              # Shared styles
 ├── app.js                  # Scoring engine & data utilities
 ├── config.js               # Apps Script URL configuration
 ├── google-apps-script.js   # Code to paste into Google Apps Script
 ├── tournament.json         # Tournament field definition
 ├── results.json            # Game results (manually updated)
+├── hall-of-fame.json       # Archived season leaderboards (manually updated)
 └── README.md
 ```
 
