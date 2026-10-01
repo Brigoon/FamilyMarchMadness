@@ -236,16 +236,13 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 }
 
 .ff-games {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 0.75rem;
-  flex-wrap: wrap;
-  justify-content: center;
 }
 
 .ff-games .bracket-game {
-  flex: 1;
-  min-width: 180px;
-  max-width: 280px;
+  min-width: 0;
 }
 
 /* ─── Main Bracket Layout (ESPN Style) ─────────────────────────────────── */
@@ -594,6 +591,10 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 }
 
 @media (max-width: 768px) {
+  .ff-games {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .site-header {
     padding: 0.75rem 1rem;
   }
@@ -621,6 +622,10 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 }
 
 @media (max-width: 480px) {
+  .ff-games {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .site-header h1 {
     font-size: 1.1rem;
   }
