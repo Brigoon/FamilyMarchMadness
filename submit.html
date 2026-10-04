@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>March Madness Bracket — Submit</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://script.google.com">
+  <link rel="preconnect" href="https://script.googleusercontent.com">
   <script src="config.js"></script>
 </head>
 <body>
@@ -36,12 +38,18 @@
       <div class="info-banner" style="margin-top:1rem;">
         First time? Pick any PIN and remember it. It locks your name so only you can edit your bracket until the deadline.
       </div>
-      <div class="success-message" id="success-msg">
-        ✅ Bracket submitted successfully! Your picks are now on the scoreboard.
-      </div>
       <div class="error-msg" id="submit-error-msg" style="display:none;"></div>
     </div>
   </main>
+
+  <div id="overlay" class="overlay" style="display:none;" role="alertdialog" aria-modal="true" aria-labelledby="overlay-title">
+    <div class="overlay-box">
+      <div id="overlay-spinner" class="spinner"></div>
+      <h3 id="overlay-title"></h3>
+      <p id="overlay-text"></p>
+      <button class="btn btn-primary" id="overlay-close" style="display:none;">Close</button>
+    </div>
+  </div>
 
   <script src="app.js"></script>
   <script>
@@ -56,13 +64,19 @@
       const btnSubmit = document.getElementById('btn-submit');
       const btnLoad = document.getElementById('btn-load');
       const bannerEl = document.getElementById('deadline-banner');
-      const successMsg = document.getElementById('success-msg');
       const pickCounter = document.getElementById('pick-counter');
+      const overlayEl = document.getElementById('overlay');
+      const overlaySpinner = document.getElementById('overlay-spinner');
+      const overlayTitle = document.getElementById('overlay-title');
+      const overlayText = document.getElementById('overlay-text');
+      const overlayClose = document.getElementById('overlay-close');
 
       let tournament = null;
       let deadline = null;
+      let deadlineState = 'loading'; // 'loading' | 'ready' | 'failed'
       let clockOffsetMs = 0; // server time minus local time
       let closed = false;
+      let busy = false;
 
       const userPicks = {
         openingRound: {},
@@ -88,20 +102,50 @@
 
       async function init() {
         try {
-          const [t, submissions] = await Promise.all([loadTournament(), loadSubmissions()]);
-          tournament = t;
-          deadline = submissions.deadline;
-          clockOffsetMs = submissions.serverTime.getTime() - Date.now();
-          loadingEl.style.display = 'none';
-          contentEl.style.display = 'block';
-          renderFullBracket();
-          updatePickCounter();
-          updateDeadlineBanner();
-          setInterval(updateDeadlineBanner, 1000);
+          tournament = await loadTournament();
         } catch (err) {
           showError(`Error loading tournament: ${err.message}`);
+          return;
         }
+        loadingEl.style.display = 'none';
+        contentEl.style.display = 'block';
+        renderFullBracket();
+        updatePickCounter();
+        updateDeadlineBanner();
+        setInterval(updateDeadlineBanner, 1000);
+
+        // The bracket only needs tournament.json; the deadline loads in the background.
+        loadSubmissions(true)
+          .then(s => {
+            deadline = s.deadline;
+            clockOffsetMs = s.serverTime.getTime() - Date.now();
+            deadlineState = 'ready';
+          })
+          .catch(() => { deadlineState = 'failed'; })
+          .finally(updateDeadlineBanner);
       }
+
+      function showOverlay(title, text) {
+        overlayTitle.textContent = title;
+        overlayText.textContent = text;
+        overlaySpinner.style.display = 'block';
+        overlayClose.style.display = 'none';
+        overlayEl.style.display = 'flex';
+      }
+
+      function showOverlayResult(title, text) {
+        overlayTitle.textContent = title;
+        overlayText.textContent = text;
+        overlaySpinner.style.display = 'none';
+        overlayClose.style.display = 'inline-flex';
+        overlayClose.focus();
+      }
+
+      function hideOverlay() {
+        overlayEl.style.display = 'none';
+      }
+
+      overlayClose.addEventListener('click', hideOverlay);
 
       function formatRemaining(ms) {
         const s = Math.floor(ms / 1000);
@@ -115,7 +159,15 @@
       /** Display only; the server enforces the deadline. */
       function updateDeadlineBanner() {
         bannerEl.style.display = 'block';
-        if (!deadline) {
+        if (deadlineState === 'loading') {
+          closed = false;
+          bannerEl.className = 'info-banner';
+          bannerEl.textContent = 'Checking the deadline\u2026';
+        } else if (deadlineState === 'failed') {
+          closed = false;
+          bannerEl.className = 'info-banner';
+          bannerEl.textContent = 'Could not check the deadline. The server will still reject late submissions.';
+        } else if (!deadline) {
           closed = true;
           bannerEl.className = 'info-banner closed';
           bannerEl.textContent = 'Submissions are not open yet.';
@@ -517,8 +569,8 @@
         const name = nameInput.value.trim();
         const hasCreds = !!(name && passcodeInput.value && pinInput.value);
         const allFilled = countFilledSlots() >= countTotalSlots();
-        btnSubmit.disabled = closed || !(hasCreds && allFilled);
-        btnLoad.disabled = !hasCreds;
+        btnSubmit.disabled = busy || closed || !(hasCreds && allFilled);
+        btnLoad.disabled = busy || !hasCreds;
       }
 
       nameInput.addEventListener('input', updateSubmitButton);
@@ -526,9 +578,12 @@
       pinInput.addEventListener('input', updateSubmitButton);
 
       btnLoad.addEventListener('click', async () => {
+        if (busy) return;
         const submitErrorMsg = document.getElementById('submit-error-msg');
         submitErrorMsg.style.display = 'none';
-        btnLoad.disabled = true;
+        busy = true;
+        updateSubmitButton();
+        showOverlay('Loading your bracket\u2026', 'Please wait.');
         try {
           const result = await postToScript({
             action: 'load',
@@ -550,16 +605,18 @@
           submitErrorMsg.textContent = `Could not load bracket: ${err.message}`;
           submitErrorMsg.style.display = 'block';
         }
+        hideOverlay();
+        busy = false;
         updateSubmitButton();
       });
 
       btnSubmit.addEventListener('click', async () => {
+        if (busy) return;
         const name = nameInput.value.trim();
         if (!name) return;
 
         const submitErrorMsg = document.getElementById('submit-error-msg');
         submitErrorMsg.style.display = 'none';
-        successMsg.style.display = 'none';
 
         const picksData = {
           submitter: name,
@@ -574,23 +631,22 @@
           championship: userPicks.championship,
         };
 
-        btnSubmit.disabled = true;
+        busy = true;
+        updateSubmitButton();
         btnSubmit.textContent = 'Submitting\u2026';
+        showOverlay('Submitting your bracket\u2026', 'Please keep this page open until it finishes.');
 
         try {
           await postToScript(picksData);
-          successMsg.style.display = 'block';
-          btnSubmit.textContent = 'Submitted \u2705';
-          setTimeout(() => {
-            btnSubmit.textContent = 'Submit Bracket';
-            updateSubmitButton();
-          }, 3000);
+          showOverlayResult('Bracket submitted!', 'Your picks are saved. You can reload your bracket and edit it until the deadline.');
         } catch (err) {
+          hideOverlay();
           submitErrorMsg.textContent = `Failed to submit: ${err.message}`;
           submitErrorMsg.style.display = 'block';
-          btnSubmit.textContent = 'Submit Bracket';
-          updateSubmitButton();
         }
+        busy = false;
+        btnSubmit.textContent = 'Submit Bracket';
+        updateSubmitButton();
       });
 
       init();

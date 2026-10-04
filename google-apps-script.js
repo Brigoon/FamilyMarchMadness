@@ -43,6 +43,11 @@ const MAX_FAILURES = 10;
 const MAX_GLOBAL_FAILURES = 30;
 const FAILURE_WINDOW_SECONDS = 900;
 
+const PUBLIC_CACHE_KEY = 'public-data';
+const DEADLINE_CACHE_KEY = 'deadline';
+const PUBLIC_CACHE_SECONDS = 60;
+const MAX_CACHE_CHARS = 90000;
+
 /** Expected pick counts and slot-id patterns per round. */
 const ROUND_RULES = {
   roundOf64:    { count: 32, key: /^[A-Za-z]{2,20}_[1-8]$/ },
@@ -327,6 +332,7 @@ function doPost(e) {
     }
     getHistorySheet().appendRow([timestamp, storedName, existing ? 'update' : 'create', jsonStr]);
     clearFailures(name);
+    CacheService.getScriptCache().remove(PUBLIC_CACHE_KEY);
 
     return jsonResponse({ success: true, message: `Bracket saved for ${storedName}` });
   } catch (err) {
@@ -350,31 +356,36 @@ function verifyPin(name, claimed, salt, hash, pin) {
  * GET — returns { deadline, serverTime, open, revealed, brackets }.
  * Until the deadline passes, brackets contain only { submitter }.
  * PINs, salts and the passcode are never returned.
+ * ?action=status returns the same shape with no brackets and skips reading them.
+ *
+ * Reads are cached for PUBLIC_CACHE_SECONDS (a new submission clears the cache),
+ * so manual edits in the spreadsheet can take up to a minute to appear.
  */
 function doGet(e) {
   try {
-    const config = readConfig();
     const now = new Date();
-    const revealed = !!config.deadline && now >= config.deadline;
-    const open = !!config.deadline && !revealed;
+    const statusOnly = !!(e && e.parameter && e.parameter.action === 'status');
 
-    const rows = getBracketsSheet().getDataRange().getValues();
+    const data = statusOnly ? { deadline: readDeadlineCached(), entries: [] } : readPublicData();
+    const deadline = data.deadline ? new Date(data.deadline) : null;
+    const revealed = !!deadline && now >= deadline;
+    const open = !!deadline && !revealed;
+
     const brackets = [];
-    for (let i = 1; i < rows.length; i++) {
-      if (!rows[i][1]) continue;
+    for (const [name, picksJson] of data.entries) {
       if (!revealed) {
-        brackets.push({ submitter: String(rows[i][1]) });
+        brackets.push({ submitter: name });
         continue;
       }
       try {
-        brackets.push(JSON.parse(rows[i][2]));
+        brackets.push(JSON.parse(picksJson));
       } catch (parseErr) {
         // Skip malformed rows
       }
     }
 
     return jsonResponse({
-      deadline: config.deadline ? config.deadline.toISOString() : null,
+      deadline: data.deadline,
       serverTime: now.toISOString(),
       open,
       revealed,
@@ -384,6 +395,44 @@ function doGet(e) {
     console.error(err);
     return jsonResponse({ error: 'Unexpected server error' });
   }
+}
+
+function cachePut(key, value) {
+  const json = JSON.stringify(value);
+  if (json.length < MAX_CACHE_CHARS) {
+    CacheService.getScriptCache().put(key, json, PUBLIC_CACHE_SECONDS);
+  }
+}
+
+function cacheGet(key) {
+  const hit = CacheService.getScriptCache().get(key);
+  if (!hit) return null;
+  try { return JSON.parse(hit); } catch (_) { return null; }
+}
+
+/** Deadline as an ISO string (or null); avoids opening the Brackets sheet. */
+function readDeadlineCached() {
+  const hit = cacheGet(DEADLINE_CACHE_KEY);
+  if (hit) return hit.deadline;
+  const config = readConfig();
+  const deadline = config.deadline ? config.deadline.toISOString() : null;
+  cachePut(DEADLINE_CACHE_KEY, { deadline });
+  return deadline;
+}
+
+/** Deadline plus [name, picksJson] for every bracket row. */
+function readPublicData() {
+  const hit = cacheGet(PUBLIC_CACHE_KEY);
+  if (hit) return hit;
+  const config = readConfig();
+  const rows = getBracketsSheet().getDataRange().getValues();
+  const data = {
+    deadline: config.deadline ? config.deadline.toISOString() : null,
+    entries: rows.slice(1).filter(r => r[1]).map(r => [String(r[1]), String(r[2])]),
+  };
+  cachePut(PUBLIC_CACHE_KEY, data);
+  cachePut(DEADLINE_CACHE_KEY, { deadline: data.deadline });
+  return data;
 }
 
 function jsonResponse(data) {

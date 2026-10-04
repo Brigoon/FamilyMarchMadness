@@ -77,12 +77,22 @@ async function loadHallOfFame() {
  * Load submissions from Google Apps Script.
  * Returns { deadline, serverTime, open, revealed, brackets }.
  * Until the deadline passes, each bracket is just { submitter }.
+ * With statusOnly, the server skips the brackets and returns just the deadline info (faster).
  */
-async function loadSubmissions() {
-  const res = await fetch(APPS_SCRIPT_URL);
+async function loadSubmissions(statusOnly = false) {
+  const res = await fetch(statusOnly ? `${APPS_SCRIPT_URL}?action=status` : APPS_SCRIPT_URL);
   if (!res.ok) throw new Error(`Failed to fetch picks: ${res.status}`);
   const data = await res.json();
   if (data.error) throw new Error(data.error);
+  if (!statusOnly) {
+    try { localStorage.setItem(SUBMISSIONS_CACHE_KEY, JSON.stringify(data)); } catch (_) { /* storage full or blocked */ }
+  }
+  return parseSubmissions(data);
+}
+
+const SUBMISSIONS_CACHE_KEY = 'mm:submissions';
+
+function parseSubmissions(data) {
   return {
     deadline: data.deadline ? new Date(data.deadline) : null,
     serverTime: data.serverTime ? new Date(data.serverTime) : new Date(),
@@ -90,6 +100,16 @@ async function loadSubmissions() {
     revealed: !!data.revealed,
     brackets: Array.isArray(data.brackets) ? data.brackets.filter(Boolean) : [],
   };
+}
+
+/** Last full submissions response seen on this device, or null. Lets pages render instantly. */
+function getCachedSubmissions() {
+  try {
+    const raw = localStorage.getItem(SUBMISSIONS_CACHE_KEY);
+    return raw ? parseSubmissions(JSON.parse(raw)) : null;
+  } catch (_) {
+    return null;
+  }
 }
 
 /** POST to Apps Script (plain-text body avoids a CORS preflight). */

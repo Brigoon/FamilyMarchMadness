@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>March Madness Bracket — Scoreboard</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://script.google.com">
+  <link rel="preconnect" href="https://script.googleusercontent.com">
   <script src="config.js"></script>
 </head>
 <body>
@@ -55,71 +57,88 @@
       const updatedEl = document.getElementById('last-updated');
       const bannerEl = document.getElementById('reveal-banner');
 
+      let rendered = false;
+
       async function refreshScoreboard() {
         try {
-          const [tournament, results, submissions] = await Promise.all([
-            loadTournament(),
-            loadResults(),
-            loadSubmissions(),
-          ]);
-          const allPicks = submissions.brackets;
+          // Start the slow Apps Script request first so it overlaps the static file loads.
+          const submissionsPromise = loadSubmissions();
+          submissionsPromise.catch(() => {}); // awaited below
+          const [tournament, results] = await Promise.all([loadTournament(), loadResults()]);
 
-          if (submissions.revealed) {
-            bannerEl.style.display = 'none';
-          } else {
-            bannerEl.textContent = submissions.deadline
-              ? `Brackets are hidden until the deadline: ${submissions.deadline.toLocaleString()}.`
-              : 'Brackets are hidden until the deadline is set.';
-            bannerEl.style.display = 'block';
-          }
+          const cached = rendered ? null : getCachedSubmissions();
+          if (cached) renderScoreboard(tournament, results, cached, true);
 
-          if (allPicks.length === 0) {
-            loadingEl.style.display = 'none';
-            errorEl.textContent = 'No brackets have been submitted yet.';
-            errorEl.style.display = 'block';
-            tableEl.style.display = 'none';
+          renderScoreboard(tournament, results, await submissionsPromise, false);
+        } catch (err) {
+          if (rendered) {
+            updatedEl.textContent = 'Could not refresh; showing the last saved scoreboard.';
             return;
           }
-
-          // Score each participant
-          const scores = allPicks.map(p => scorePicks(p, results, tournament));
-
-          // Sort: by current score desc, then max possible desc
-          scores.sort((a, b) => {
-            if (b.currentScore !== a.currentScore) return b.currentScore - a.currentScore;
-            return b.maxPossible - a.maxPossible;
-          });
-
-          // Render
-          tbodyEl.innerHTML = '';
-          scores.forEach((s, i) => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-              <td class="rank">${i + 1}</td>
-              <td class="name">${escapeHtml(s.name)}</td>
-              <td class="score">${s.currentScore}</td>
-              <td class="max-possible">${s.maxPossible}</td>
-            `;
-            // Encode the submitter name for the bracket link
-            const nameParam = encodeURIComponent(s.name.toLowerCase().replace(/\s+/g, '-'));
-            tr.addEventListener('click', () => {
-              // Find the matching pick filename from manifest
-              // We'll match by submitter name
-              window.location.href = `bracket.html?name=${nameParam}`;
-            });
-            tbodyEl.appendChild(tr);
-          });
-
-          loadingEl.style.display = 'none';
-          tableEl.style.display = 'table';
-          updatedEl.style.display = 'block';
-          updatedEl.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
-          setupExport(scores, results, submissions);
-        } catch (err) {
           loadingEl.style.display = 'none';
           errorEl.textContent = `Error loading data: ${err.message}`;
           errorEl.style.display = 'block';
         }
+      }
+
+      function renderScoreboard(tournament, results, submissions, fromCache) {
+        rendered = true;
+        const allPicks = submissions.brackets;
+
+        if (submissions.revealed) {
+          bannerEl.style.display = 'none';
+        } else {
+          bannerEl.textContent = submissions.deadline
+            ? `Brackets are hidden until the deadline: ${submissions.deadline.toLocaleString()}.`
+            : 'Brackets are hidden until the deadline is set.';
+          bannerEl.style.display = 'block';
+        }
+
+        if (allPicks.length === 0) {
+          loadingEl.style.display = 'none';
+          errorEl.textContent = 'No brackets have been submitted yet.';
+          errorEl.style.display = 'block';
+          tableEl.style.display = 'none';
+          return;
+        }
+
+        // Score each participant
+        const scores = allPicks.map(p => scorePicks(p, results, tournament));
+
+        // Sort: by current score desc, then max possible desc
+        scores.sort((a, b) => {
+          if (b.currentScore !== a.currentScore) return b.currentScore - a.currentScore;
+          return b.maxPossible - a.maxPossible;
+        });
+
+        // Render
+        tbodyEl.innerHTML = '';
+        scores.forEach((s, i) => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td class="rank">${i + 1}</td>
+            <td class="name">${escapeHtml(s.name)}</td>
+            <td class="score">${s.currentScore}</td>
+            <td class="max-possible">${s.maxPossible}</td>
+          `;
+          // Encode the submitter name for the bracket link
+          const nameParam = encodeURIComponent(s.name.toLowerCase().replace(/\s+/g, '-'));
+          tr.addEventListener('click', () => {
+            // Find the matching pick filename from manifest
+            // We'll match by submitter name
+            window.location.href = `bracket.html?name=${nameParam}`;
+          });
+          tbodyEl.appendChild(tr);
+        });
+
+        loadingEl.style.display = 'none';
+        errorEl.style.display = 'none';
+        tableEl.style.display = 'table';
+        updatedEl.style.display = 'block';
+        updatedEl.textContent = fromCache
+          ? 'Showing saved results, updating…'
+          : `Last updated: ${new Date().toLocaleTimeString()}`;
+        setupExport(scores, results, submissions);
       }
 
       function escapeHtml(str) {

@@ -47,8 +47,8 @@ Participants visit `submit.html`, fill out their bracket, and enter their name, 
 
 You own the spreadsheet, so you can edit it directly at any time, including after the deadline.
 
-- **Change the deadline or passcode:** edit the `Config` tab. It takes effect immediately.
-- **Edit or delete a bracket:** edit or delete its row in `Brackets`.
+- **Change the deadline or passcode:** edit the `Config` tab. It takes effect immediately for submissions; the scoreboard and countdown can take up to a minute to catch up because reads are cached.
+- **Edit or delete a bracket:** edit or delete its row in `Brackets` (the scoreboard may take up to a minute to show it).
 - **Forgotten PIN:** clear the `PinSalt` and `PinHash` cells on that row. The next submission with the passcode re-claims the name.
 - **Recover an overwritten bracket:** every submission is appended to the `History` tab.
 
