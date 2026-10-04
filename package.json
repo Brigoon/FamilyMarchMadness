@@ -1,0 +1,12 @@
+{
+  "name": "steve-madness",
+  "private": true,
+  "description": "Steve Madness bracket site (static). Package file exists only to run the tests.",
+  "scripts": {
+    "test": "node --test",
+    "check-data": "node --test tests/data.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -148,6 +148,60 @@ Which regions host the 11-seed and 15-seed opening-round games isn't known until
 
 No redeploy of the Apps Script is needed.
 
+## Testing
+
+The scoring engine in `app.js` has a test suite that uses Node's built-in test runner (Node 20 or newer, no `npm install` needed).
+
+```bash
+npm test              # everything
+npm run check-data    # only the tournament.json / results.json checks
+```
+
+It runs automatically on every push through GitHub Actions (`.github/workflows/test.yml`).
+
+| File | What it covers |
+|------|----------------|
+| `tests/scoring.test.js` | Hand-worked scenarios: perfect bracket, all wrong, upset paths, Final Four pairing, ties in the Hall of Fame |
+| `tests/manual-fixtures.test.js` | Every file in `tests/fixtures/manual/`, checked automatically |
+| `tests/properties.test.js` | Random brackets and results checked against rules that must always hold, and against an independent calculation |
+| `tests/data.test.js` | Your live `tournament.json` and `results.json` (76 teams, valid winners, no typos) |
+
+Run `npm run check-data` after editing `results.json` to catch a misspelled team or a winner entered in the wrong game.
+
+### Adding a hand-verified fixture
+
+A Picks JSON from the spreadsheet has the same shape as `results.json`, so you can fill out everything on the submit page:
+
+1. Fill out a complete bracket as a fake person (for example `RESULTS`) to act as the results. Then fill out the brackets you want to score under test names.
+2. Copy each bracket's `Picks JSON` cell from the `Brackets` or `History` tab into its own file, such as `/tmp/results.json` and `/tmp/alice.json`.
+3. Print a table to check by hand (the `--through` stages are `openingRound`, `roundOf64`, `roundOf32`, `sweetSixteen`, `eliteEight`, `finalFour`, `championship`, and `final`):
+   ```bash
+   node tests/tools/explain.js --results /tmp/results.json --picks /tmp/alice.json /tmp/bob.json --detail
+   ```
+4. When the numbers match your hand count, write the fixture file:
+   ```bash
+   node tests/tools/explain.js --results /tmp/results.json --picks /tmp/alice.json /tmp/bob.json --emit > tests/fixtures/manual/my-test.json
+   ```
+   Remove any stages you did not verify from `expected`, and fill in `description`. The numbers are produced by the code, so only commit them after checking them yourself.
+
+A fixture looks like this: `results` is a full set of results, and each bracket lists the `score` and `maxPossible` expected after each round. `final` means the results exactly as given.
+
+```json
+{
+  "description": "What this covers",
+  "results": { "openingRound": {}, "...": {}, "championship": "Team" },
+  "brackets": [
+    {
+      "name": "Alice",
+      "picks": { "openingRound": {}, "...": {}, "championship": "Team" },
+      "expected": { "roundOf32": { "score": 73, "maxPossible": 111 }, "championship": { "score": 111, "maxPossible": 111 } }
+    }
+  ]
+}
+```
+
+Fixtures use their own copy of the field (`tests/fixtures/tournament-76.json`), so they keep working when `tournament.json` changes for a new season. Use test names rather than real family brackets, because this folder is published with the site.
+
 ## Deploying to GitHub Pages
 
 1. Push all files to a GitHub repository
@@ -172,6 +226,9 @@ The scoreboard auto-refreshes every 60 seconds, so updating `results.json` and p
 ├── tournament.json         # Tournament field definition
 ├── results.json            # Game results (manually updated)
 ├── hall-of-fame.json       # Archived season leaderboards (manually updated)
+├── package.json            # Test scripts only (no dependencies)
+├── tests/                  # Scoring test suite (see Testing)
+├── .github/workflows/      # Runs the tests on every push
 └── README.md
 ```
 
