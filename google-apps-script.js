@@ -1,5 +1,5 @@
 /**
- * Google Apps Script — March Madness Bracket Storage (guarded)
+ * Google Apps Script — Steve Madness Bracket Storage (guarded)
  *
  * SETUP INSTRUCTIONS:
  * 1. Go to https://script.google.com and create a new project
@@ -65,7 +65,7 @@ function getSpreadsheet() {
   const props = PropertiesService.getScriptProperties();
   let ssId = props.getProperty('SPREADSHEET_ID');
   if (!ssId) {
-    const ss = SpreadsheetApp.create('March Madness Brackets');
+    const ss = SpreadsheetApp.create('Steve Madness Brackets');
     props.setProperty('SPREADSHEET_ID', ss.getId());
     Logger.log('Created spreadsheet: ' + ss.getUrl());
     return ss;

@@ -1,5 +1,5 @@
 /**
- * config.js — Configuration for March Madness Bracket
+ * config.js — Configuration for Steve Madness
  *
  * Set APPS_SCRIPT_URL to your deployed Google Apps Script web app URL.
  * It handles guarded bracket submission (passcode, PIN, deadline) and loading.

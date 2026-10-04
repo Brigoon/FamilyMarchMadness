@@ -1,5 +1,5 @@
 /**
- * app.js — Shared utilities for March Madness Bracket
+ * app.js — Shared utilities for Steve Madness
  *
  * Contains: data loading, scoring engine, max-possible-point calculations,
  *           bracket structure helpers, and common constants.

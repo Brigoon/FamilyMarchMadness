@@ -1,4 +1,4 @@
-# March Madness Bracket
+# Steve Madness
 
 A static March Madness bracket submission and scoring website for a small family group. Brackets can be submitted directly from the browser using a Google Apps Script backend — no downloads or manual file management required. The site is served statically (e.g., GitHub Pages).
 
